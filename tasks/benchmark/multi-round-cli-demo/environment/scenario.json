@@ -1,0 +1,24 @@
+{
+  "num_rounds": 3,
+  "user_persona": "一位数据产品经理,说话简洁直接,很在意 CLI 的向后兼容和易用性。",
+  "rounds": [
+    {
+      "index": 1,
+      "requirement": "stats CLI 能读取单个 CSV 文件并打印 count/mean/min/max 统计摘要",
+      "user_intent": "让 agent 从零实现一个处理 CSV 的 stats 命令行工具",
+      "test_id": "stats_basic"
+    },
+    {
+      "index": 2,
+      "requirement": "新增 --output-json 选项,输出 JSON 格式的统计结果;默认仍为纯文本输出",
+      "user_intent": "在现有 stats 工具上加一个 --output-json 选项",
+      "test_id": "stats_json"
+    },
+    {
+      "index": 3,
+      "requirement": "支持多个输入文件参数,对每个文件分别输出统计;保留单文件、纯文本与 JSON 输出等已有行为",
+      "user_intent": "让 stats 支持一次处理多个文件,且不能破坏已有的功能",
+      "test_id": "stats_multi"
+    }
+  ]
+}
