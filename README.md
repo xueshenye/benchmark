@@ -6,12 +6,12 @@
 
 ## 环境
 
-- conda env:`/ssd/xueshenye/env/harbor`(Python 3.12)
-- Harbor CLI:`/ssd/xueshenye/env/harbor/bin/harbor`
-- 安装(注意必须显式用 pypi.org,镜像源过期/超时):
+- uv 管理的 venv:`.venv`(Python 3.12.13)
+- Harbor CLI:`.venv/bin/harbor`(当前版本 0.20.0)
+- 安装/刷新依赖(用 uv,不要用 pip —— 镜像源过期/超时):
 
   ```bash
-  /ssd/xueshenye/env/harbor/bin/pip install --index-url https://pypi.org/simple --timeout 120 --retries 3 harbor
+  uv sync
   ```
 
 > 本机**不使用 Docker**。Harbor 默认执行 provider 是本地 Docker;任务的实际执行需要 Docker 或云 provider(Daytona/Modal/E2B 等),该决策待定。
@@ -37,7 +37,8 @@ Multi-turn(多轮)任务使用 `steps/` 子目录 + `task.toml` 的 `[[steps]]` 
 
 ```bash
 cd tasks
-/ssd/xueshenye/env/harbor/bin/harbor task init <task-name>
+../.venv/bin/harbor task init <org>/<task-name>            # 单步任务
+../.venv/bin/harbor task init <org>/<task-name> --steps 2  # 多步(multi-turn)任务
 ```
 
 然后按 Harbor 任务教程编写 `instruction.md`、`task.toml`、`environment/Dockerfile`、`tests/`、`solution/`。参考:
@@ -47,6 +48,6 @@ cd tasks
 ## 运行(待执行方式确定)
 
 ```bash
-harbor run -p <task> -a oracle            # 用参考解法验证任务可解
-harbor run -p <task> -a <agent> -m <model>  # 用真实 agent 跑
+.venv/bin/harbor run -p <task> -a oracle            # 用参考解法验证任务可解
+.venv/bin/harbor run -p <task> -a <agent> -m <model>  # 用真实 agent 跑
 ```
