@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+env/
+
+# Harbor outputs (local runs)
+jobs/
+trials/
+work_dirs/
+eval_results/
+*.log
+
+# Large model/artifact files
+*.pth
+*.onnx
+*.safetensors
+*.bin
+*.zip
+*.tar.gz
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Node (if docs tooling is added)
+node_modules/

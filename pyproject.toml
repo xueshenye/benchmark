@@ -1,0 +1,11 @@
+[project]
+name = "multi-turn-agent-benchmark"
+version = "0.1.0"
+description = "Programming-domain multi-turn agent benchmark built on Harbor"
+requires-python = ">=3.12"
+dependencies = [
+    "harbor",
+]
+
+[tool.uv]
+package = false
