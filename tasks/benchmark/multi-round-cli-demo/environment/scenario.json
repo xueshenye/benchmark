@@ -10,14 +10,14 @@
     },
     {
       "index": 2,
-      "requirement": "新增 --output-json 选项,输出 JSON 格式的统计结果;默认仍为纯文本输出",
-      "user_intent": "在现有 stats 工具上加一个 --output-json 选项",
+      "requirement": "新增 --output-json 选项:JSON 输出必须是 JSON 数组,每个元素包含 count/mean/min/max 四个字段;即使只有一个输入文件,也输出长度为 1 的数组;默认仍为纯文本输出,不带该选项时行为不变",
+      "user_intent": "在现有 stats 工具上加一个 --output-json 选项,并要求 JSON 输出总是数组格式(单文件也输出 [{...}] 数组)",
       "test_id": "stats_json"
     },
     {
       "index": 3,
-      "requirement": "支持多个输入文件参数,对每个文件分别输出统计;保留单文件、纯文本与 JSON 输出等已有行为",
-      "user_intent": "让 stats 支持一次处理多个文件,且不能破坏已有的功能",
+      "requirement": "支持多个输入文件参数,对每个文件分别输出统计;纯文本模式每个文件一行;JSON 模式输出数组,每个元素对应一个文件;保留单文件、纯文本与 JSON 输出等已有行为(单文件 JSON 仍为长度 1 的数组)",
+      "user_intent": "让 stats 支持一次处理多个文件,且不能破坏已有的功能,JSON 输出保持数组格式",
       "test_id": "stats_multi"
     }
   ]

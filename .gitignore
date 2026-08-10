@@ -6,6 +6,9 @@ __pycache__/
 .venv/
 env/
 
+# Secrets — real credentials, never commit
+.env
+
 # Harbor outputs (local runs)
 jobs/
 trials/

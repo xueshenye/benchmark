@@ -2,7 +2,7 @@
 
 基于 [Harbor](https://github.com/laude-institute/harbor) 框架构建的编程领域 **Multi-turn 交互式 Agent Benchmark**。
 
-> **状态:已实现 MVP(方案 A)。** 交互式多轮 agent 已实现并通过单元测试;端到端运行待执行方式确定。
+> **状态:已实现 MVP(方案 A)。** 交互式多轮 agent 已实现并通过单元测试;端到端运行走 **Novita** 云执行 provider(已配置,待填入 API key)。
 
 ## 核心思想
 
@@ -50,6 +50,7 @@ proj/
 │   ├── solution/solve.sh             # 参考解法(全部 3 轮)
 │   └── tests/{test.sh, scorer.py}    # 逐轮累计计分 → reward.json
 ├── tests/                            # 无 Docker 单元测试
+├── .env.example                      # 运行凭证模板(NOVITA_API_KEY / USER_LLM_*)
 └── CLAUDE.md
 ```
 
@@ -64,19 +65,34 @@ proj/
 
 - 测试:`.venv/bin/python -m pytest tests/`
 
-> 本机**不使用 Docker**,端到端 `harbor run` 暂不能跑;任务编写与单元测试不受影响。
+> 本机 Docker daemon 虽在运行,但当前用户无 root/socket 权限且无 sudo → **端到端运行走 Novita 云沙箱**(`-e novita`);任务编写与单元测试不受影响。
 
-## 运行(待执行方式确定)
+## 运行(执行 provider = Novita)
+
+Novita 会把任务的 `environment/Dockerfile` 在云端构建成模板并启动沙箱(支持 FROM/RUN/COPY/ADD/WORKDIR/USER/ENV/CMD)。模板按 `environment_name + env_hash + key 后缀` 缓存复用;沙箱最长 1 小时(超时自动销毁),按量计费。
 
 ```bash
+cp .env.example .env   # 填入 NOVITA_API_KEY + USER_LLM_*
+
 # 完整多轮交互(agent 为 claude-code,user 为另一个 LLM)
-PYTHONPATH=. USER_LLM_MODEL=<user-llm-model> USER_LLM_API_BASE=<endpoint> \
-  .venv/bin/harbor run -p tasks/benchmark/multi-round-cli-demo \
+PYTHONPATH=. .venv/bin/harbor run --env-file .env -e novita \
+  -p tasks/benchmark/multi-round-cli-demo \
   -a benchmark.interactive_agent:InteractiveUserClaude -m <claude-model>
 
 # 用参考解法验证任务可解(仅跑 verifier 路径)
-.venv/bin/harbor run -p tasks/benchmark/multi-round-cli-demo -a oracle
+.venv/bin/harbor run --env-file .env -e novita \
+  -p tasks/benchmark/multi-round-cli-demo -a oracle
+
+# 不花钱的配置预检(解析 JobConfig,不发 API 请求)
+.venv/bin/harbor run -p tasks/benchmark/multi-round-cli-demo -e novita --print-config
 ```
+
+需要的凭证:
+- `NOVITA_API_KEY` — [novita.ai](https://novita.ai) Key Management 创建(`sk_` 开头)
+- `USER_LLM_MODEL` / `USER_LLM_API_BASE` / `USER_LLM_API_KEY` — 模拟用户 LLM(Anthropic 兼容端点;Novita 也提供 `/v3/anthropic`,可同时用于执行 + user-LLM)
+- `-m <claude-model>` — agent 用的模型名
+
+> SDK:`uv add novita-sandbox` 已装(Harbor 对 cloud provider 懒加载,基础包不含)。Novita 域默认 `us-phx-1.sandbox.novita.ai`,可用 `NOVITA_DOMAIN`/`NOVITA_API_URL` 覆盖。
 
 ## 重要说明:reward 协议偏差
 
