@@ -1,0 +1,25 @@
+{
+  "user_persona": "一位数据分析师,负责销售流水处理。报 bug 时只描述症状不指行号;很在意数据正确性(不能算错、不能崩),也重视后续维护。",
+  "milestones": [
+    {
+      "index": 1,
+      "requirement": "修复 /workspace 中的销售流水处理脚本 pipeline.py:按 category 列(第 2 列)分组、对 amount 列(第 3 列)求和,每行输出 '<category>: <total>',金额保留两位小数,按类别名排序;空 amount 的行应跳过而不是崩溃;提供的可见测试 tests/test_pipeline.py 应全部通过(python3 -m pytest 全绿);输出示例:electronics: 25.50。",
+      "user_intent": "我们的销售流水脚本算出来不对:它按日期而不是按类别分组了,而且遇到空金额会直接崩溃。请把它修好,让 tests 里的测试全部通过,输出要按类别算总额。",
+      "test_id": "repofix_basic"
+    },
+    {
+      "index": 2,
+      "requirement": "修复各类边界输入的处理:空文件、仅含表头、含空行、amount 为空白或非数值、类别名含中文等 Unicode 字符,均应正常退出(返回码 0)且不崩溃;空白或非数值的 amount 行跳过;没有有效数据时输出为空(不报错)。",
+      "user_intent": "光修正常数据还不够,还得顶住脏数据:空文件、只有表头、有空行、金额空着或不是数字、类别带中文——这些都不能崩。空白/非数字的金额跳过就行,空数据也别报错。",
+      "test_id": "repofix_edge"
+    },
+    {
+      "index": 3,
+      "requirement": "把 pipeline.py 重构为多个小函数(至少 3 个函数定义,提升可读性);新增 tests/test_regression.py 覆盖已修复的'按类别分组'与'空 amount 跳过'两个行为;全部测试(python3 -m pytest)通过;输出行为与之前完全一致。",
+      "user_intent": "维护性也要跟上:把 pipeline.py 拆成几个小函数别都堆在 main 里,再补一个 tests/test_regression.py 把修过的 bug 固化住。改完所有测试要过,行为不能变。",
+      "test_id": "repofix_regression"
+    }
+  ],
+  "max_rounds": 6,
+  "max_corrections": 1
+}

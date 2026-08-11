@@ -1,0 +1,25 @@
+{
+  "user_persona": "一位工程团队负责人,负责一个文本处理小工具。说话简洁务实;很在意可复现的安装(pip install 之后到处能用)、测试覆盖(不许改坏已有功能)和命令行可用性。",
+  "milestones": [
+    {
+      "index": 1,
+      "requirement": "在 /workspace 创建可安装的 Python 包 wordcount:公开函数 count(text) 返回 {词: 次数} 字典;分词规则为按字母数字 token 切分(忽略标点与空白)并统一转小写;包可通过 python3 -c 'import wordcount' 从 /workspace 导入;工作区根目录含 pyproject.toml 元数据。",
+      "user_intent": "在 /workspace 建一个叫 wordcount 的 Python 包:提供 count(text) 返回每个词出现的次数,要忽略标点、不区分大小写;包要能被 import,根目录要有 pyproject.toml。",
+      "test_id": "pkg_api"
+    },
+    {
+      "index": 2,
+      "requirement": "新增公开函数 top_words(text, n) 返回出现次数最多的前 n 个词,次数相同时按字典序取靠前的;在 tests/ 下用 pytest 编写并运行测试且全部通过;count 的行为保持不变。",
+      "user_intent": "再加一个 top_words(text, n) 返回频率前 n 的词,并列的次数按字典序排;然后用 pytest 补上测试并跑通,别把 count 改坏了。",
+      "test_id": "pkg_tests"
+    },
+    {
+      "index": 3,
+      "requirement": "在 pyproject.toml 增加 console 入口 wordcount = wordcount.cli:main,使 pip install -e /workspace 之后命令 wordcount <file> 可用:输出每行 '<word>: <count>',按次数降序、次数相同按词字典序;安装后从任意目录 import wordcount 与运行 wordcount 命令均可;python3 -m pytest 仍全绿。",
+      "user_intent": "命令行也要能用:加 console 入口,让我 pip install 之后直接 wordcount <文件> 就能输出词频(每行 词: 次数,按次数降序);装完从任何目录 import 和跑命令都行,测试保持全绿。",
+      "test_id": "pkg_cli"
+    }
+  ],
+  "max_rounds": 6,
+  "max_corrections": 1
+}

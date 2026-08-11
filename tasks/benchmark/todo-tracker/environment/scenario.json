@@ -1,0 +1,31 @@
+{
+  "user_persona": "一位产品经理,负责一个团队的日常任务管理。说话简洁直接,很在意数据可见性(任务要存成文件、自己能看到),也很在意 CLI 稳定——每次新需求都以不破坏已有命令为前提。",
+  "milestones": [
+    {
+      "index": 1,
+      "requirement": "todo CLI 提供 add/list/done 三个子命令:todo add \"<任务描述>\" 新增一个待办任务(自动分配从 1 开始递增的整数 id);todo list 逐行打印所有未完成任务,每行格式为 '<id>: <描述>';todo done <id> 把指定 id 的任务标记为完成;todo 不带参数时打印简短用法。任务数据持久化保存在当前目录的 todos.json 文件中,多次调用(不同进程)之间状态保持一致;仅用 Python 标准库实现。",
+      "user_intent": "从零做一个叫 todo 的命令行待办工具:能 add 添加任务、list 列出未完成的任务、done 标记完成。任务要保存到当前目录的 todos.json 文件里,关掉终端再打开也还能看到。",
+      "test_id": "tracker_crud"
+    },
+    {
+      "index": 2,
+      "requirement": "新增 todo list --all(显示全部任务,含已完成,已完成的任务行追加 ' [done]' 后缀)、todo stats(打印三个计数,格式 'total=<N> pending=<N> done=<N>')、todo list --output-json(输出 JSON 数组,每个元素是含 id/description/status/created_at 字段的对象;即使没有任何任务也输出 [])。不带 --output-json 时仍为纯文本输出;R1 的 add/done/list 行为不变。",
+      "user_intent": "todo 要能看全部任务(list --all 把完成的也显示出来并标上 done),能看统计(stats 输出 total/pending/done),还要支持 list --output-json 输出 JSON 数组(没任务时也要是 [])。已有的 add/done 别动。",
+      "test_id": "tracker_all_stats_json"
+    },
+    {
+      "index": 3,
+      "requirement": "todo add 支持 --priority high|medium|low 选项(默认 medium);todo list --priority <级别> 只显示该优先级的未完成任务;todo list --status done 只显示已完成任务;todo list --output-json 的任务对象增加 priority 字段;stats、--all、done、纯文本输出等既有行为不变。",
+      "user_intent": "任务要分优先级:add 时用 --priority high|medium|low(不写默认 medium),list 能按 --priority 和 --status 过滤,JSON 输出里也要带上 priority 字段。老功能不要破坏。",
+      "test_id": "tracker_priority"
+    },
+    {
+      "index": 4,
+      "requirement": "新增 todo report(按优先级分组统计全部任务的数量,打印三行 'high: <N>'/'medium: <N>'/'low: <N>',计数为 0 也要打印)与 todo search \"<关键词>\"(在任务描述中做大小写不敏感的子串匹配,输出格式与 list 一致,已完成任务带 ' [done]' 后缀);report 与 search 后跟 --output-json 时输出对应的 JSON 数组;其余命令与输出行为全部保持不变。",
+      "user_intent": "再加两个功能:todo report 按优先级统计任务数量,和 todo search \"词\" 搜任务描述(不区分大小写)。report/search 也能 --output-json。其它命令别动。",
+      "test_id": "tracker_report_search"
+    }
+  ],
+  "max_rounds": 8,
+  "max_corrections": 1
+}

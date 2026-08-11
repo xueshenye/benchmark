@@ -1,0 +1,30 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "benchmark/pkg-wordcount"
+description = "Interactive multi-turn task: pip-installable wordcount package (API, pytest tests, console entry point)"
+authors = []
+keywords = ["multi-turn", "interactive", "package", "pytest", "cli"]
+
+[metadata]
+
+[verifier]
+timeout_sec = 300.0
+collect = []
+
+[verifier.env]
+
+[agent]
+timeout_sec = 3600.0
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 900.0
+os = "linux"
+mcp_servers = []
+workdir = "/workspace"
+
+[environment.env]
+
+[solution.env]

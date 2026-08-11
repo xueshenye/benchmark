@@ -1,0 +1,30 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "benchmark/todo-tracker"
+description = "Interactive multi-turn task: persistent todo CLI grown across 4 user rounds"
+authors = []
+keywords = ["multi-turn", "interactive", "cli", "persistence"]
+
+[metadata]
+
+[verifier]
+timeout_sec = 300.0
+collect = []
+
+[verifier.env]
+
+[agent]
+timeout_sec = 3600.0
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 900.0
+os = "linux"
+mcp_servers = []
+workdir = "/workspace"
+
+[environment.env]
+
+[solution.env]

@@ -38,6 +38,16 @@ The agent is registered via Harbor's import-path factory (`-a benchmark.interact
 
 3-round cumulative scenario (stats CLI): round 1 basic summary → round 2 `--output-json` → round 3 multiple files (keep 1–2 working). `environment/scenario.json` is baked into the container at `/workspace/scenario.json` and read by both the agent (via `exec cat`) and the verifier.
 
+## Task suite (T1–T3, complexity ladder)
+
+Design rationale + capability taxonomy in `docs/task-suite-design.md` (survey of SWE-Interact/SWE-Together/τ-bench/EvoCode-Bench etc.). Three new tasks sit on top of the stats baseline, all locally validated (full solution → reward=1; last-round-only discriminator → reward=0; Harbor preflight OK; `tests/` has a per-task scorer test):
+
+- **T1 `todo-tracker/`** (4 rounds, empty start): persistent todo CLI — `add/list/done`, then `--all`/`stats`/`--output-json`, then `--priority`/`--status` filters, then `report`/`search`. Probes **state persistence** (`todos.json` in cwd), data modeling, cross-process consistency, regression.
+- **T2 `repofix/`** (3 rounds, **seeded-broken repo** in `seed/` baked into the image): fix a mis-grouped/crashing CSV pipeline → harden edge cases (empty/blank/non-numeric/unicode) → refactor into ≥3 functions + add `tests/test_regression.py`. Probes **debugging, edge cases, self-verification (pytest), refactoring, regression tests**. Hidden behavioral checks guard against "building to the visible test" (verified: rewriting the visible tests to pass still scores 0).
+- **T3 `pkg-wordcount/`** (3 rounds, empty start): pip-installable `wordcount` package — `count(text)` API + `pyproject.toml` → `top_words` + pytest tests → console entry `wordcount <file>` verified via a real `pip install -e`. Probes **real ecosystem (pip/pytest), package structure, CLI entry, self-verification**. The scorer's `pip install` has a `--user` fallback and resolves the console script next to `sys.executable` (the uv venv needs `python -m ensurepip` for local validation).
+
+Authoring rules that carry across tasks (see `docs/task-suite-design.md` §2.3): every milestone requirement is an observable behavior; format/constraint details go in **both** `requirement` and `user_intent` (PROJECT_STATE.md §6.4); each check re-exercises earlier behavior (regression); the verifier checks the real artifact with hidden inputs, never the agent's self-report.
+
 ## Verifier & reward protocol (IMPORTANT deviation)
 
 - The task's `tests/scorer.py` reads `scenario.json`, runs each milestone's ground-truth check against the **final** workspace, and writes **`/logs/verifier/reward.json`** as a flat dict: `{"round_1": 0|1, ..., "reward": <product>}`.
@@ -84,4 +94,4 @@ Repo `laude-institute/harbor` (its `AGENTS.md` = codebase layout; `LiteLLM` at `
 
 ## Status / next steps
 
-MVP done. Execution provider chosen: **Novita** (`harbor run -e novita`); end-to-end run is unblocked except for `NOVITA_API_KEY` + `USER_LLM_*` credentials (see `.env.example`). Planned iteration (Design B): refactor rounds to native multi-step — one step per round, a runner/hook generating each step's instruction from the previous step's agent trajectory via the user-LLM, gaining per-step rewards + `min_reward` gating.
+MVP + Design A+/Design B done and Novita-validated; **task suite T1–T3 implemented and locally validated** (todo-tracker / repofix / pkg-wordcount; see "Task suite" above). Next: run each new task 1–2× end-to-end on Novita (needs `.env` credentials — `NOVITA_API_KEY` + `USER_LLM_*` + `ANTHROPIC_*`), observing user-LLM judgement fidelity on harder tasks and watching for judge-vs-scorer divergence, then push RLVR (reward.json multi-key → `VerifierResult.rewards`). Design B refactor path stays available (native multi-step + step-wise runner via `--plugin benchmark.design_b_plugin:DesignBPlugin`).
