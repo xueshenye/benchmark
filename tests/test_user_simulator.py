@@ -41,6 +41,8 @@ def test_judge_and_speak_returns_parsed_decision() -> None:
     # The prompt references the current milestone's requirement and the agent output.
     assert "basic" in prompts[0]
     assert "Agent built a basic stats CLI." in prompts[0]
+    # The faithfulness guard discourages inventing requirements beyond the ground truth.
+    assert "不要凭空添加" in prompts[0]
     # judge_and_speak is pure: it must not mutate the transcript.
     assert len(sim.transcript) == 1
     assert sim.transcript[0] == {"role": "user", "content": "initial task description"}

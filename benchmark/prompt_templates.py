@@ -126,4 +126,5 @@ def build_turn_decision_prompt(
 2. satisfied=false 时,message 必须是针对 agent 实际输出缺点的具体纠正意见(指出哪里不对/缺什么),并且必须让最终实现发生改变。
 3. satisfied=true 且还有下一阶段时,message 应自然、口语化地提出下一阶段的要求;satisfied=true 且没有下一阶段时,message 是自然收尾语。
 4. 像真实用户一样说话,可以提及 agent 最近的做法,但不要复述整段历史。
+5. 提出的要求以【完成标准】和【意图】为准,不要凭空添加其中没有的新字段/新格式/新硬性约束(真实用户不会发明需求);确有必要增加时,要在 message 里给一句理由。
 """

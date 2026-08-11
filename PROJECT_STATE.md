@@ -125,6 +125,7 @@ count=5 mean=3.0 min=1.0 max=5.0
 | Design A+ 动态交互(单测) | ✅ 满意推进/纠正轮/强制推进/轮次上限均有测试覆盖(scorer 首获单测覆盖) |
 | 端到端 run A+ #1(02:23) | ✅ **round_1,2,3=1,reward=1**。Design A+ 首次端到端:Kimi 3 次判定全 `satisfied:true`,无纠正轮;自然消息引用 agent 实际做法 |
 | 端到端 run A+ #2(02:56,含工作区证据) | ✅ **round_1,2,3=1,reward=1**。每轮 `decisions[].workspace_evidence` 记录真实文件 diff(新增/修改 /workspace/stats),判定基于实际改动;无畸形判定警告 |
+| 端到端判别器(03:40,`LastOnlyClaude`) | ✅ **round_1=0,round_2=0,round_3=1 → reward=0**。确定性"只做最后里程碑"agent(只写多文件实现)→ verifier 在真实 Novita 部署下正确判 0 |
 
 run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM)在真实部署下工作;round_2=0 不是 harness bug,是任务规格问题。run #3 证明 **ground-truth 显式化 → user-LLM 忠实转述 → agent 正确实现**的链路成立:把格式/约束细节写进 `requirement`+`user_intent`,Kimi 会原样传达(甚至补充理由),agent 据此实现。run A+ #1/#2 证明 **动态判定 + 工作区证据在真实部署下成立**,且 `satisfied` 判定与 verifier 一致(reward=1)。
 
@@ -146,7 +147,7 @@ run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM
 - [x] **user-LLM 判定质量**:run A+ #1/#2 在 Novita 上验证,`satisfied` 判定与 verifier 一致(全 1);观察到一个发散点:user-LLM 会加 ground-truth 之外的要求(见 §5 观察),在更复杂任务上继续观察
 - [ ] **user-LLM 转述质量**:run #3 / A+ #2 通过,但只在 Kimi/K3 + 这一任务上验证过;更多任务/轮次上继续观察,必要时调 `prompt_templates.py`/persona
 - [x] **提交所有改动** → `c1f5c41`(.gitignore、CLAUDE.md、README.md、pyproject.toml、uv.lock、scenario.json、.env.example、PROJECT_STATE.md;`.env` 已 git-ignore 不提交)
-- [ ] **真实端到端验证"只完成最后一轮"判别器**(在 Novita 上故意跑一个只做最后里程碑的 agent,确认 reward=0;目前只在本地验证过)
+- [x] **真实端到端验证"只完成最后一轮"判别器**:`benchmark/last_only_agent.py`(确定性"只做最后里程碑"agent)→ Novita run(03:40)**round_1=0,round_2=0,round_3=1 → reward=0**,判别器在真实部署下有效
 - [ ] 待用户补充的真实 benchmark 任务内容(当前只有 demo 任务)
 - [ ] Design B(见 §8)
 
@@ -157,7 +158,7 @@ run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM
 **Design B(原生 multi-step 重构,已规划,未开始)**:把轮次从"单 trial 内 agent.run() 循环"(方案 A+)改为 Harbor 原生 multi-step —— **每步 = 一轮**,一个 runner/hook 在步间读上一步的 agent 轨迹 → 调 user-LLM → 动态生成下一步 instruction(如重写 `steps/step-N/instruction.md` 懒加载)。**`TurnController` 已是传输无关组件,可直接搬进 Harbor hook 复用**。收益:原生 per-step reward + `min_reward` 门控 + per-step 轨迹,RLVR 更友好。注意 **`min_reward` 门控与"不满意→纠正轮"存在张力**(门控会在某步不达标时提前中止),需关掉门控或特殊设计;需要执行 provider 支持原生 multi-step 行为,且要在 Novita 上验证。
 
 **Benchmark 质量改进方向**:
-- user-LLM 判定保真(已完成并端到端验证):每轮把 /workspace 真实文件 diff 注入判定 prompt(`workspace_evidence`),`satisfied` 基于 agent 实际改动而非自述;`decisions` 日志记录证据,可审计。可考虑在 prompt 里加"不要添加 ground truth 之外的硬性格式要求"以抑制发散。
+- user-LLM 判定保真(已完成并端到端验证):每轮把 /workspace 真实文件 diff 注入判定 prompt(`workspace_evidence`),`satisfied` 基于 agent 实际改动而非自述;`decisions` 日志记录证据,可审计。已在 `build_turn_decision_prompt` 加忠实度护栏(规则 5:不凭空添加 ground truth 之外的新字段/新格式/新硬性约束),抑制 §5 观察到的发散。
 - user-LLM 忠实度:评估并提升 user-LLM 把 ground-truth(尤其格式/约束细节)转述进自然消息的可靠性;可能加"约束完整性"校验。
 - ground-truth 设计规范:scorer 检查的每一点都应能从自然指令合理推出;避免"读心"式测试点。
 - 更多任务/轮次;评估"自然、连续、必要"的介入质量。
