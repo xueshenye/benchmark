@@ -127,6 +127,7 @@ count=5 mean=3.0 min=1.0 max=5.0
 | 端到端 run A+ #2(02:56,含工作区证据) | ✅ **round_1,2,3=1,reward=1**。每轮 `decisions[].workspace_evidence` 记录真实文件 diff(新增/修改 /workspace/stats),判定基于实际改动;无畸形判定警告 |
 | 端到端判别器(03:40,`LastOnlyClaude`) | ✅ **round_1=0,round_2=0,round_3=1 → reward=0**。确定性"只做最后里程碑"agent(只写多文件实现)→ verifier 在真实 Novita 部署下正确判 0 |
 | 端到端 Design B(04:17,原生 multi-step) | ✅ **reward=1,round_1,2,3=1**。插件注入→`InteractiveMultiStepTrial`→步间 runner 整条链打通;实际只跑 **3 步**(提前终止生效);per-step reward 稠密诊断(1,0,0→0 / 1,1,0→0 / 1,1,1→1),每步轨迹保留 |
+| 端到端 Design B 判别器(04:48,`LastOnlyClaude`) | ✅ **round_1=0,round_2=0,round_3=1 → reward=0**。多步链路判别器有效;**纠正轮真实触发**(decisions:每里程碑 1 次纠正 + 1 次强制推进);5/6 步后 round_count 到顶提前终止 |
 
 run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM)在真实部署下工作;round_2=0 不是 harness bug,是任务规格问题。run #3 证明 **ground-truth 显式化 → user-LLM 忠实转述 → agent 正确实现**的链路成立:把格式/约束细节写进 `requirement`+`user_intent`,Kimi 会原样传达(甚至补充理由),agent 据此实现。run A+ #1/#2 证明 **动态判定 + 工作区证据在真实部署下成立**,且 `satisfied` 判定与 verifier 一致(reward=1)。
 
@@ -150,7 +151,7 @@ run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM
 - [x] **提交所有改动** → `c1f5c41`(.gitignore、CLAUDE.md、README.md、pyproject.toml、uv.lock、scenario.json、.env.example、PROJECT_STATE.md;`.env` 已 git-ignore 不提交)
 - [x] **真实端到端验证"只完成最后一轮"判别器**:`benchmark/last_only_agent.py`(确定性"只做最后里程碑"agent)→ Novita run(03:40)**round_1=0,round_2=0,round_3=1 → reward=0**,判别器在真实部署下有效
 - [ ] 待用户补充的真实 benchmark 任务内容(当前只有 demo 任务)
-- [x] **Design B(原生 multi-step)实现 + Novita 端到端验证**:`benchmark/{step_driver,multi_step_trial,interactive_step_agent,design_b_plugin}.py` + 多步任务 `tasks/benchmark/multi-round-cli-demo-multistep/`(6 预建步、共享根 tests、`multi_step_reward_strategy="final"`、无 min_reward)。单测 46/46(A+ 36 + StepDriver 6 + step-agent 4);Novita run(04:17)**reward=1**,per-step 稠密诊断 + 提前终止 + 每步轨迹全验证。**纯增量、可回退**(A+ 零改动)。可选后续:LastOnlyClaude 跑多步任务验证 reward=0
+- [x] **Design B(原生 multi-step)实现 + Novita 端到端验证**:`benchmark/{step_driver,multi_step_trial,interactive_step_agent,design_b_plugin}.py` + 多步任务 `tasks/benchmark/multi-round-cli-demo-multistep/`(6 预建步、共享根 tests、`multi_step_reward_strategy="final"`、无 min_reward)。单测 46/46(A+ 36 + StepDriver 6 + step-agent 4);Novita run(04:17)**reward=1**(提前终止、per-step 稠密诊断、每步轨迹);判别器 run(04:48,LastOnlyClaude)**reward=0** + 纠正轮真实触发。**纯增量、可回退**(A+ 零改动)
 
 ## 8. 未来计划(含 A+ 后改进)
 
