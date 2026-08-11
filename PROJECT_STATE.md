@@ -152,6 +152,8 @@ count=5 mean=3.0 min=1.0 max=5.0
 | T3 pkg-wordcount(本地,无容器) | ✅ 参考解法 → **round_1,2,3=1,reward=1**;**判别器(跳过 top_words/R2)→ round_1=1, round_2=0, round_3=1,reward=0**(乘积捕获"跳过中间里程碑");scorer 单测 5/5 |
 | 3 个新任务 Harbor 预检 | ✅ `harbor run -p <task> -e novita --print-config` 全部通过;scenario.json 经 `Scenario` 模型解析 OK |
 | 单测总计 | ✅ **66/66**(A+ 36 + B 10 + todo 8 + repofix 7 + pkg 5) |
+| 端到端 todo-tracker #1(07:26) | ⚠️ **round_1..4=0,reward=0** —— 交互链路完美(4 轮全 satisfied、agent 实现全部正确),但 verifier 因 **scorer 候选入口 bug** 全判 0(§6.9)。已修 scorer |
+| 端到端 todo-tracker #2(07:50,已修 scorer) | ✅ **round_1,2,3,4=1,reward=1**。首个非 demo 任务的完整 e2e:4 轮全 satisfied、无纠正轮;user-LLM 消息忠实(引用实际行为:JSON 数组、[done] 后缀、priority 默认、report 三行含 0、search 大小写不敏感)且 **判定与 verifier 完全一致**(judge-vs-scorer 分歧=0) |
 
 run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM)在真实部署下工作;round_2=0 不是 harness bug,是任务规格问题。run #3 证明 **ground-truth 显式化 → user-LLM 忠实转述 → agent 正确实现**的链路成立:把格式/约束细节写进 `requirement`+`user_intent`,Kimi 会原样传达(甚至补充理由),agent 据此实现。run A+ #1/#2 证明 **动态判定 + 工作区证据在真实部署下成立**,且 `satisfied` 判定与 verifier 一致(reward=1)。
 

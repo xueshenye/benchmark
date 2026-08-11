@@ -206,7 +206,7 @@
 ## 7. 实现状态
 
 - ✅ **T1 todo-tracker**、**T2 repofix**、**T3 pkg-wordcount** 均已实现(`tasks/benchmark/{todo-tracker,repofix,pkg-wordcount}/`)并**本地验证**:参考解法 → 全轮 1 / reward=1;判别器 → reward=0;Harbor `--print-config` 预检通过;scenario 经 `Scenario` 模型解析 OK;单测 66/66(新增 20)。
-- ✅ **T1 Novita 端到端(07:26)**:交互链路完美(4 轮全 satisfied、user-LLM 消息忠实且基于真实行为、agent 实现全部正确),但 verifier 因 **scorer 候选入口 bug** 全判 0(`python3 src/todo.py` 缺失时 rc=2 短路,见 PROJECT_STATE.md §6.9)。已修 scorer 并本地复现:参考解 → 全 1,agent 真实实现 → round_1,2,3=1(round_4 因会话转录重构不完整未复现,但工作区证据显示 report/search 确实实现)。**待重跑确认 reward=1**。
+- ✅ **T1 Novita 端到端(07:26 + 07:50 重跑)**:首跑交互链路完美但 verifier 因 **scorer 候选入口 bug** 全判 0(`python3 src/todo.py` 缺失时 rc=2 短路,见 PROJECT_STATE.md §6.9);修 scorer 后重跑 **round_1..4=1,reward=1**。4 轮全 satisfied、无纠正轮;user-LLM 消息忠实且与 verifier 判定**完全一致**(judge-vs-scorer 分歧=0)。
 - ⏳ **T2/T3 Novita 端到端**:待跑(每个 1-2 次)。重点观察 user-LLM 判定/转述质量在更复杂任务上是否稳定(文献警示 τ²-bench 47% 模拟器错误;Lost in Simulation ±9pp 用户模型敏感性),记录判定 vs verifier 分歧。
 
 *本文件随任务实现迭代更新;实现进度记录在 `PROJECT_STATE.md`。*
