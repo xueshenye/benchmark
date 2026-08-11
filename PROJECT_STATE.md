@@ -126,6 +126,7 @@ count=5 mean=3.0 min=1.0 max=5.0
 | 端到端 run A+ #1(02:23) | ✅ **round_1,2,3=1,reward=1**。Design A+ 首次端到端:Kimi 3 次判定全 `satisfied:true`,无纠正轮;自然消息引用 agent 实际做法 |
 | 端到端 run A+ #2(02:56,含工作区证据) | ✅ **round_1,2,3=1,reward=1**。每轮 `decisions[].workspace_evidence` 记录真实文件 diff(新增/修改 /workspace/stats),判定基于实际改动;无畸形判定警告 |
 | 端到端判别器(03:40,`LastOnlyClaude`) | ✅ **round_1=0,round_2=0,round_3=1 → reward=0**。确定性"只做最后里程碑"agent(只写多文件实现)→ verifier 在真实 Novita 部署下正确判 0 |
+| 端到端 Design B(04:17,原生 multi-step) | ✅ **reward=1,round_1,2,3=1**。插件注入→`InteractiveMultiStepTrial`→步间 runner 整条链打通;实际只跑 **3 步**(提前终止生效);per-step reward 稠密诊断(1,0,0→0 / 1,1,0→0 / 1,1,1→1),每步轨迹保留 |
 
 run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM)在真实部署下工作;round_2=0 不是 harness bug,是任务规格问题。run #3 证明 **ground-truth 显式化 → user-LLM 忠实转述 → agent 正确实现**的链路成立:把格式/约束细节写进 `requirement`+`user_intent`,Kimi 会原样传达(甚至补充理由),agent 据此实现。run A+ #1/#2 证明 **动态判定 + 工作区证据在真实部署下成立**,且 `satisfied` 判定与 verifier 一致(reward=1)。
 
@@ -149,13 +150,13 @@ run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM
 - [x] **提交所有改动** → `c1f5c41`(.gitignore、CLAUDE.md、README.md、pyproject.toml、uv.lock、scenario.json、.env.example、PROJECT_STATE.md;`.env` 已 git-ignore 不提交)
 - [x] **真实端到端验证"只完成最后一轮"判别器**:`benchmark/last_only_agent.py`(确定性"只做最后里程碑"agent)→ Novita run(03:40)**round_1=0,round_2=0,round_3=1 → reward=0**,判别器在真实部署下有效
 - [ ] 待用户补充的真实 benchmark 任务内容(当前只有 demo 任务)
-- [ ] Design B(见 §8)
+- [x] **Design B(原生 multi-step)实现 + Novita 端到端验证**:`benchmark/{step_driver,multi_step_trial,interactive_step_agent,design_b_plugin}.py` + 多步任务 `tasks/benchmark/multi-round-cli-demo-multistep/`(6 预建步、共享根 tests、`multi_step_reward_strategy="final"`、无 min_reward)。单测 46/46(A+ 36 + StepDriver 6 + step-agent 4);Novita run(04:17)**reward=1**,per-step 稠密诊断 + 提前终止 + 每步轨迹全验证。**纯增量、可回退**(A+ 零改动)。可选后续:LastOnlyClaude 跑多步任务验证 reward=0
 
 ## 8. 未来计划(含 A+ 后改进)
 
-**短期(当前轮)**:Design A+ 已单测覆盖 + Novita 端到端验证(reward=1,判定质量良好);下一步做"只完成最后一里程碑"判别器的端到端验证(reward=0);并继续在更复杂任务上观察 user-LLM 判定/转述质量(见 §5 观察)。
+**短期(当前轮)**:Design A+ 已单测覆盖 + Novita 端到端验证(reward=1,判定质量良好);判别器已端到端验证(reward=0);**下一步:Design B 在 Novita 上端到端跑通**(验证插件注入 → trial 子类 → 步间 runner → per-step reward 整条链),并检查 per-step reward.json/轨迹;之后可做判别器变体(LastOnlyClaude 跑多步任务)。
 
-**Design B(原生 multi-step 重构,已规划,未开始)**:把轮次从"单 trial 内 agent.run() 循环"(方案 A+)改为 Harbor 原生 multi-step —— **每步 = 一轮**,一个 runner/hook 在步间读上一步的 agent 轨迹 → 调 user-LLM → 动态生成下一步 instruction(如重写 `steps/step-N/instruction.md` 懒加载)。**`TurnController` 已是传输无关组件,可直接搬进 Harbor hook 复用**。收益:原生 per-step reward + `min_reward` 门控 + per-step 轨迹,RLVR 更友好。注意 **`min_reward` 门控与"不满意→纠正轮"存在张力**(门控会在某步不达标时提前中止),需关掉门控或特殊设计;需要执行 provider 支持原生 multi-step 行为,且要在 Novita 上验证。
+**Design B(原生 multi-step,已实现、e2e 待验证)**:每步 = 一轮,`InteractiveMultiStepTrial` 步间调 `StepDriver`(user-LLM 判定满意/纠正/强制推进),经包装的 `Task.step_instruction` 注入下一步指令(不改仓库)。**设计决策**:`multi_step_reward_strategy="final"`(最后一步全里程碑乘积,与 A+ 判别语义一致,避免 mean 稀释);**`min_reward` 不设**(与"纠正轮"冲突——纠正轮在某步天然低分,门控会提前中止;终止由 `TurnController` 控制);物理步数 = `max_rounds` 预建、有效轮数动态(`_run` 提前 break 避免尾随 no-op)。**注入路径**:`harbor run --plugin benchmark.design_b_plugin:DesignBPlugin`,`on_job_start` 在 `Trial.create` 前 monkeypatch `MultiStepTrial`(`Trial.create` 用函数体内局部 import,monkeypatch 有效)。
 
 **Benchmark 质量改进方向**:
 - user-LLM 判定保真(已完成并端到端验证):每轮把 /workspace 真实文件 diff 注入判定 prompt(`workspace_evidence`),`satisfied` 基于 agent 实际改动而非自述;`decisions` 日志记录证据,可审计。已在 `build_turn_decision_prompt` 加忠实度护栏(规则 5:不凭空添加 ground truth 之外的新字段/新格式/新硬性约束),抑制 §5 观察到的发散。

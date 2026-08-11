@@ -107,3 +107,19 @@ PYTHONPATH=. .venv/bin/harbor run --env-file .env -e novita \
 ## 自定义 agent 注册
 
 通过 Harbor 的 import-path 注册(`-a "module:ClassName"`)。已验证 `AgentFactory.create_agent_from_import_path("benchmark.interactive_agent:InteractiveUserClaude", ...)` 可实例化。
+
+## Design B(原生 multi-step,实验性)
+
+把每轮改为 Harbor **原生 step**(每步 = 一轮),步间 runner 读上一步轨迹 → user-LLM → 动态生成下一步指令。收益:原生 per-step reward + per-step 轨迹,RLVR 更友好。
+
+```
+harbor run -e novita --env-file .env \
+  -p tasks/benchmark/multi-round-cli-demo-multistep \
+  -a benchmark.interactive_step_agent:InteractiveStepClaude -m <model> \
+  --plugin benchmark.design_b_plugin:DesignBPlugin
+```
+
+- `DesignBPlugin.on_job_start` 在 trial 创建前 monkeypatch `MultiStepTrial` → `InteractiveMultiStepTrial`(零 Harbor 代码改动)。
+- `InteractiveMultiStepTrial` 每步后调用 `StepDriver`(user-LLM 判定满意/纠正/强制推进),经包装的 `Task.step_instruction` 注入下一步指令(不改仓库)。
+- **reward = `multi_step_reward_strategy="final"`**:最终 reward = 最后一步的全里程碑乘积,与 Design A+ 判别语义一致;每步 reward.json 保留在 `trial_dir/steps/{name}/verifier/` 作稠密诊断。`min_reward` 故意不设(与纠正轮冲突)。
+- **回退**:Design B 纯增量——删除 `benchmark/{step_driver,multi_step_trial,interactive_step_agent,design_b_plugin}.py`、`tests/test_{step_driver,interactive_step_agent}.py`、`tasks/benchmark/multi-round-cli-demo-multistep/`,A+ 原样可用。

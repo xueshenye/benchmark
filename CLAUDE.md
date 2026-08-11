@@ -25,6 +25,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `prompt_templates.py` — `build_turn_decision_prompt` (judge + produce `{satisfied, message}`) and `build_user_message_prompt` (render a milestone's intent); both can render a `workspace_evidence` section (per-round file diff) so the user judges real code. The decision prompt includes a faithfulness guard (don't invent requirements beyond the milestone's ground truth).
 - `last_only_agent.py` — `LastOnlyClaude`: deterministic "last-milestone-only" agent for end-to-end discriminator validation (writes only the multi-file impl, ignores user messages; expect `reward=0`).
 
+**Design B (native multi-step, experimental, purely additive):**
+- `interactive_step_agent.py` — `InteractiveStepClaude`: per-step agent = one `claude --print` run + dumps `agent_summary.txt` + `workspace_snapshot.json` to logs_dir (archived per step).
+- `step_driver.py` — `StepDriver`: transport-agnostic between-step logic (snapshot diff → user-LLM judge → advance/correct/force-advance → next instruction). Zero Harbor imports.
+- `multi_step_trial.py` — `InteractiveMultiStepTrial(MultiStepTrial)`: wraps `Task.step_instruction` to inject generated instructions; `_after_step` drives StepDriver; early-breaks on completion. Requires `multi_step_reward_strategy="final"`, no `min_reward`.
+- `design_b_plugin.py` — `DesignBPlugin`: `on_job_start` monkeypatches `harbor.trial.multi_step.MultiStepTrial` (injected via `harbor run --plugin benchmark.design_b_plugin:DesignBPlugin`).
+- Task: `tasks/benchmark/multi-round-cli-demo-multistep/` (6 pre-created steps, shared root `tests/`). Run: `-p <that task> -a benchmark.interactive_step_agent:InteractiveStepClaude --plugin benchmark.design_b_plugin:DesignBPlugin`. Rollback = delete the additive files + task dir.
+
 The agent is registered via Harbor's import-path factory (`-a benchmark.interactive_agent:InteractiveUserClaude`); verified to instantiate.
 
 ## Sample task (`tasks/benchmark/multi-round-cli-demo/`)

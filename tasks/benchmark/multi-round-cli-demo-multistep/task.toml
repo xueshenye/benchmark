@@ -1,0 +1,57 @@
+schema_version = "1.3"
+artifacts = []
+# Design B: the trial reward is the LAST step's verifier result (the full
+# milestone product), identical to Design A+'s discriminator. `min_reward` is
+# intentionally unset: a corrective round legitimately scores low mid-run, and
+# gating would abort before the agent can fix it. Termination is governed by the
+# TurnController (all milestones done / round budget spent).
+multi_step_reward_strategy = "final"
+
+[task]
+name = "benchmark/multi-round-cli-demo-multistep"
+description = "Interactive multi-step (Design B): stats CLI built across dynamic user rounds"
+authors = []
+keywords = ["multi-turn", "interactive", "cli", "multistep"]
+
+[metadata]
+
+[verifier]
+timeout_sec = 300.0
+collect = []
+
+[verifier.env]
+
+[agent]
+timeout_sec = 3600.0
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 900.0
+os = "linux"
+mcp_servers = []
+workdir = "/workspace"
+
+[environment.env]
+
+[solution.env]
+
+# One pre-created step per round (max_rounds=6 in scenario.json). Steps 2-6
+# instruction.md are placeholders — the between-step runner injects each step's
+# instruction at runtime via the wrapped Task.step_instruction.
+[[steps]]
+name = "step-1"
+
+[[steps]]
+name = "step-2"
+
+[[steps]]
+name = "step-3"
+
+[[steps]]
+name = "step-4"
+
+[[steps]]
+name = "step-5"
+
+[[steps]]
+name = "step-6"
