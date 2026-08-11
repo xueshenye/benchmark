@@ -167,6 +167,7 @@ run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM
 6. **Design B 本地任务目录就地使用**:`-p` 本地任务 Harbor **不复制**,直接在用户源码目录上跑;运行时改写 `steps/*/instruction.md` 会污染仓库。→ Design B 用**包装 `Task.step_instruction`** 注入生成指令(每次现读、无缓存),不写文件。
 7. **`min_reward` 与纠正轮冲突**:纠正轮在某步天然低分,`min_reward` 门控会提前中止、破坏纠正语义。→ Design B **不设 `min_reward`**,终止由 `TurnController` 控制。
 8. **AGENT_END 钩子时机**:非 mounted 环境在 `AGENT_END` 时当前步 agent 输出**尚未下载到宿主**(`_sync_agent_output` 在步末才执行)。→ 可靠读点在**归档后**(自定义 trial 的 `_after_step`,`_archive_step_outputs` 同步执行)或 `VERIFICATION_START`。
+9. **scorer 候选入口发现必须跳过"文件不存在"**:todo-tracker e2e(07:26)agent 把实现写在 `/workspace/todo.py`(合法),但 scorer 候选 1 `python3 src/todo.py` 在**文件缺失时是 rc=2 的 CompletedProcess**(python 报 "can't open file"),不是 FileNotFoundError → `run_todo` 把 rc=2 当结果返回、短路了真正的 `/workspace/todo.py` → verifier 全 0(而 user-LLM 判定全 satisfied,agent 实现本身完全正确)。demo 的 `run_stats` 靠 `rc==0 and stdout` 门槛躲过;todo scorer 改为**先 `os.path.exists(cmd[-1])` 跳过不存在入口**。**教训**:多候选入口的 scorer 必须显式跳过缺失文件,或要求 rc==0+非空 stdout 才接受候选。
 
 ## 7. 未完成工作
 

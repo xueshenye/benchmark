@@ -40,8 +40,15 @@ def _todo_candidates(base_dir: str) -> list[list[str]]:
 
 
 def run_todo(base_dir: str, cwd: str, args: list[str], timeout: int = 30):
-    """Run the todo CLI in ``cwd`` with ``args``; return CompletedProcess or None."""
+    """Run the todo CLI in ``cwd`` with ``args``; return CompletedProcess or None.
+
+    Skips candidate entry points whose file does not exist — otherwise
+    ``python3 src/todo.py`` on a missing file exits rc=2 (not FileNotFoundError)
+    and would short-circuit before the real ``/workspace/todo.py`` is tried.
+    """
     for cmd in _todo_candidates(base_dir):
+        if not os.path.exists(cmd[-1]):
+            continue
         try:
             result = subprocess.run(
                 cmd + args,
@@ -50,7 +57,7 @@ def run_todo(base_dir: str, cwd: str, args: list[str], timeout: int = 30):
                 text=True,
                 timeout=timeout,
             )
-            return result  # first entry point that actually launches
+            return result  # first existing entry point that runs
         except FileNotFoundError:
             continue
         except subprocess.TimeoutExpired:
