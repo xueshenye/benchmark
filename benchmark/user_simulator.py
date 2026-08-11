@@ -1,25 +1,75 @@
 """Simulated interactive user backed by an LLM.
 
-Drives the multi-turn protocol: for each round >= 2, turns the scenario's
-scripted ``user_intent`` into a natural user message conditioned on the agent's
-actual output from the previous round. Uses Harbor's ``LiteLLM`` by default; an
-LLM callable can be injected for tests.
+Drives the multi-turn protocol: for each round >= 2, the user-LLM is asked to
+judge whether the agent's previous output satisfied the current milestone and
+to produce the next natural user message as strict JSON ``{"satisfied": bool,
+"message": str}``. The controller (`benchmark.controller.TurnController`)
+decides advance / correct / force-advance from that decision.
+
+The judge/render methods are *pure* (they never touch the transcript); the
+controller records each actually-delivered message via ``record_turn`` so the
+transcript reflects only what the user really said. Uses Harbor's ``LiteLLM``
+by default; an LLM callable can be injected for tests.
 """
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 from typing import Awaitable, Callable
 
-from benchmark.prompt_templates import build_user_message_prompt
-from benchmark.scenario import Scenario
+from pydantic import BaseModel
+
+from benchmark.prompt_templates import (
+    build_turn_decision_prompt,
+    build_user_message_prompt,
+)
+from benchmark.scenario import Milestone, Scenario
+
+logger = logging.getLogger(__name__)
 
 # A callable that takes a prompt string and returns the LLM's text output.
 LLMCall = Callable[[str], Awaitable[str]]
 
 
+class TurnDecision(BaseModel):
+    """The user-LLM's structured decision for one turn."""
+
+    satisfied: bool
+    message: str
+
+
+def parse_turn_decision(raw: str) -> TurnDecision:
+    """Parse the user-LLM's strict-JSON reply into a ``TurnDecision``.
+
+    Tolerates an optional ``````json```` fence. Raises ``ValueError`` on
+    malformed JSON or a non-object payload.
+    """
+    text = raw.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    if not text:
+        raise ValueError("empty user-LLM output")
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"user-LLM output is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise ValueError(f"user-LLM output is not a JSON object: {data!r}")
+    return TurnDecision(
+        satisfied=bool(data.get("satisfied", False)),
+        message=str(data.get("message", "")).strip(),
+    )
+
+
 class UserSimulator:
-    """Role-plays the interactive user across the scenario's rounds."""
+    """Role-plays the interactive user across the scenario's milestones."""
 
     def __init__(
         self,
@@ -57,23 +107,77 @@ class UserSimulator:
         """Record round 1: the initial task comes from the task's instruction.md."""
         self._transcript = [{"role": "user", "content": initial_task}]
 
-    async def next_message(self, round_index: int, agent_output: str) -> str:
-        """Generate the user message for ``round_index`` (>= 2) from the agent's
-        latest output. Advances the internal conversation transcript."""
-        round_spec = self.scenario.round_by_index(round_index)
-        prompt = build_user_message_prompt(
+    async def judge_and_speak(
+        self,
+        current: Milestone,
+        nxt: Milestone | None,
+        agent_output: str,
+        *,
+        workspace_evidence: str = "",
+    ) -> TurnDecision:
+        """Judge the agent's latest output against ``current`` and produce the
+        next user message. Pure: does not mutate the transcript.
+
+        ``workspace_evidence`` is a caller-supplied description of the files the
+        agent actually changed, so the judgement is grounded in real evidence.
+        """
+        prompt = build_turn_decision_prompt(
             persona=self.scenario.user_persona,
-            round_spec=round_spec,
-            num_rounds=self.scenario.num_rounds,
+            current=current,
+            nxt=nxt,
+            num_milestones=len(self.scenario.milestones),
             transcript=self._transcript,
             agent_output=agent_output,
+            workspace_evidence=workspace_evidence,
+        )
+        raw = (await self._call_llm(prompt)).strip()
+        try:
+            decision = parse_turn_decision(raw)
+        except ValueError as exc:
+            if not raw:
+                raise RuntimeError(f"user-LLM returned an empty message for milestone {current.index}") from exc
+            # Conservative fallback: treat unparseable output as unsatisfied and
+            # use the raw text as the user's speech (keeps the agent on the
+            # current milestone rather than advancing on a misread).
+            logger.warning(
+                "user-LLM returned non-JSON for milestone %d; treating as unsatisfied: %s",
+                current.index,
+                exc,
+            )
+            decision = TurnDecision(satisfied=False, message=raw)
+        if not decision.message:
+            raise RuntimeError(
+                f"user-LLM returned a decision with an empty message for milestone {current.index}"
+            )
+        return decision
+
+    async def render_milestone(
+        self,
+        milestone: Milestone,
+        *,
+        agent_output: str = "",
+        workspace_evidence: str = "",
+    ) -> str:
+        """Render a milestone's intent into a natural user message (used when a
+        forced advance re-requests the next milestone). Pure: does not mutate
+        the transcript."""
+        prompt = build_user_message_prompt(
+            persona=self.scenario.user_persona,
+            milestone=milestone,
+            num_milestones=len(self.scenario.milestones),
+            transcript=self._transcript,
+            agent_output=agent_output,
+            workspace_evidence=workspace_evidence,
         )
         message = (await self._call_llm(prompt)).strip()
         if not message:
-            raise RuntimeError(f"user-LLM returned an empty message for round {round_index}")
+            raise RuntimeError(f"user-LLM returned an empty message for milestone {milestone.index}")
+        return message
+
+    def record_turn(self, agent_output: str, message: str) -> None:
+        """Record one delivered exchange: the agent's output, then the user's message."""
         self._transcript.append({"role": "assistant", "content": agent_output})
         self._transcript.append({"role": "user", "content": message})
-        return message
 
     async def _call_llm(self, prompt: str) -> str:
         if self._llm is not None:

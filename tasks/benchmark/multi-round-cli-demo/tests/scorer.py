@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Score the interactive multi-turn task against the FINAL workspace state.
 
-Reads ``scenario.json`` and runs each round's ground-truth check against the
-final code in the workspace, then writes ``/logs/verifier/reward.json``::
+Reads ``scenario.json`` and runs each milestone's ground-truth check against
+the final code in the workspace, then writes ``/logs/verifier/reward.json``::
 
     {"round_1": 1.0, "round_2": 1.0, "round_3": 1.0, "reward": 1.0}
 
-Each per-round check verifies that round's requirement is STILL satisfied in
-the final state (cumulative regression). An agent that only implemented the
-last round scores 0 on earlier rounds, so the product ``reward`` is 0.
+Each per-milestone check verifies that milestone's requirement is STILL
+satisfied in the final state (cumulative regression). An agent that only
+implemented the last milestone scores 0 on earlier ones, so the product
+``reward`` is 0.
 
 Run from the verifier: ``python3 /tests/scorer.py [--base-dir DIR]``.
 """
@@ -164,14 +165,14 @@ CHECKERS: dict[str, object] = {
 # ------------------------------------------------------------------ main
 
 def score(scenario: dict, base_dir: str) -> dict[str, float]:
-    """Compute per-round scores + product reward from the final workspace."""
+    """Compute per-milestone scores + product reward from the final workspace."""
     per_round: dict[str, float] = {}
-    for round_spec in scenario["rounds"]:
-        test_id = round_spec["test_id"]
+    for milestone in scenario["milestones"]:
+        test_id = milestone["test_id"]
         checker = CHECKERS.get(test_id)
         if checker is None:
             raise KeyError(f"no checker implemented for test_id={test_id!r}")
-        per_round[f"round_{round_spec['index']}"] = float(checker(base_dir))
+        per_round[f"round_{milestone['index']}"] = float(checker(base_dir))
     reward = 1.0
     for v in per_round.values():
         reward *= v

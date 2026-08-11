@@ -2,7 +2,7 @@
 
 基于 [Harbor](https://github.com/laude-institute/harbor) 框架构建的编程领域 **Multi-turn 交互式 Agent Benchmark**。
 
-> **状态:已实现 MVP(方案 A)。** 交互式多轮 agent 已实现并通过单元测试;端到端运行走 **Novita** 云执行 provider(已配置,待填入 API key)。
+> **状态:已实现 Design A+(动态里程碑 + 纠正轮)。** 交互式多轮 agent 已实现并通过单元测试;端到端运行走 **Novita** 云执行 provider(已配置,待填入 API key)。
 
 ## 核心思想
 
@@ -15,41 +15,47 @@
 
 **每轮 instruction 只包含模拟用户那一条自然消息**(不重放历史)—— agent 必须从环境(已有代码)+ 新消息重建上下文,严格考验记忆与约束保持。
 
-## 架构(MVP,方案 A:自定义 agent,单 trial)
+## 架构(Design A+:自定义 agent,单 trial,动态里程碑)
 
 ```
 harbor run -p <task> -a benchmark.interactive_agent:InteractiveUserClaude ...
   │ agent.run() [宿主进程]
   │   读容器内 scenario.json(exec cat)
-  │   Round 1: instruction = instruction.md(初始任务)→ claude --print 执行 → 捕获输出
-  │   Round 2..N: user-LLM(LiteLLM)依 persona+该轮需求+上轮 agent 实际输出 → 自然 user 消息
-  │             → instruction = 仅这条消息 → claude --print 执行 → 捕获输出
-  │   写 interactive_transcript.json 工件
+  │   控制器 TurnController 驱动(轮次动态):
+  │   Round 1: instruction = instruction.md(初始任务,里程碑 1)→ claude --print → 捕获输出
+  │   每轮后: 抓取 /workspace 快照并 diff(上轮 vs 本轮)→ 真实改动证据
+  │   后续轮: user-LLM 据「上轮输出 + 工作区 diff」判定 → 严格 JSON {"satisfied": bool, "message": str}
+  │       satisfied=true  → 推进下一里程碑(message = 下一需求)
+  │       satisfied=false → 纠正轮,留在当前里程碑(纠正次数 ≤ max_corrections)
+  │      纠正耗尽       → 强制推进(该里程碑由 verifier 判 0)
+  │     → instruction = 仅 message → claude --print 执行 → 捕获输出
+  │   写 interactive_transcript.json 工件(scenario + decisions[含 workspace_evidence] + transcript)
   └─ 结束后 → verifier(tests/scorer.py,容器内)
-      读 scenario.json → 对最终状态逐轮累计检查(该轮需求 + 之前所有轮回归)
-      写 /logs/verifier/reward.json {round_1..N, reward=各轮乘积}
+      读 scenario.json → 对最终状态逐里程碑累计检查(该里程碑需求 + 之前所有里程碑回归)
+      写 /logs/verifier/reward.json {round_1..N, reward=各里程碑乘积}
 ```
 
-- 轮次 = 共享同一容器,前几轮的代码保留,后续轮次在其上修改。
-- **区分"只完成最后一轮"与"完整多轮"**:per-round 键逐轮检查最终代码是否仍满足该轮需求。示例(参考 `/tmp` 验证):`round_1=0,round_2=1,round_3=1 → reward=0`;完整实现 → `reward=1`。
-- **RLVR**:`reward`(各轮乘积,稀疏 0/1)作为标量信号;`round_1..N` 键为稠密诊断;`reward.json` 直接进入 `VerifierResult.rewards`。
+- 轮次 = 共享同一容器,前几轮的代码保留,后续轮次在其上修改;**总轮次动态**(`max_rounds` 硬上限,`max_corrections` 每里程碑纠正预算)。
+- **区分"只完成最后一轮"与"完整多轮"**:per-round 键逐里程碑检查最终代码是否仍满足该里程碑需求。示例:`round_1=0,round_2=1,round_3=1 → reward=0`;完整实现 → `reward=1`。
+- **RLVR**:`reward`(各里程碑乘积,稀疏 0/1)作为标量信号;`round_1..N` 键为稠密诊断;`reward.json` 直接进入 `VerifierResult.rewards`。纠正轮只影响交互过程,不改 reward 键结构。
 
 ## 目录结构
 
 ```
 proj/
 ├── benchmark/                        # 基准框架代码(需在 PYTHONPATH 上)
-│   ├── interactive_agent.py          # InteractiveUserClaude:轮次循环 + claude-code 驱动
-│   ├── user_simulator.py             # UserSimulator:LiteLLM 封装,反应式生成 user 消息
-│   ├── scenario.py                   # 多轮场景模型(schema 校验)
-│   └── prompt_templates.py           # user-LLM 提示词
-├── tasks/benchmark/multi-round-cli-demo/   # 示例任务(3 轮)
-│   ├── instruction.md                # 初始任务(round 1)
+│   ├── interactive_agent.py          # InteractiveUserClaude:循环 + claude-code 驱动
+│   ├── controller.py                 # TurnController:动态里程碑状态机(advance/纠正/强制推进)
+│   ├── user_simulator.py             # UserSimulator:LiteLLM 封装,判定+生成 user 消息
+│   ├── scenario.py                   # Milestone/Scenario 模型(schema 校验)
+│   └── prompt_templates.py           # user-LLM 提示词(判定 prompt + 消息 prompt)
+├── tasks/benchmark/multi-round-cli-demo/   # 示例任务(3 个里程碑)
+│   ├── instruction.md                # 初始任务(milestone 1)
 │   ├── task.toml
 │   ├── environment/{Dockerfile, scenario.json}   # scenario.json 进容器 /workspace/
-│   ├── solution/solve.sh             # 参考解法(全部 3 轮)
-│   └── tests/{test.sh, scorer.py}    # 逐轮累计计分 → reward.json
-├── tests/                            # 无 Docker 单元测试
+│   ├── solution/solve.sh             # 参考解法(全部 3 个里程碑)
+│   └── tests/{test.sh, scorer.py}    # 逐里程碑累计计分 → reward.json
+├── tests/                            # 无 Docker 单元测试(含 controller/scorer)
 ├── .env.example                      # 运行凭证模板(NOVITA_API_KEY / USER_LLM_*)
 └── CLAUDE.md
 ```

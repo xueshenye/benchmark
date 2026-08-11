@@ -1,7 +1,6 @@
 {
-  "num_rounds": 3,
   "user_persona": "一位数据产品经理,说话简洁直接,很在意 CLI 的向后兼容和易用性。",
-  "rounds": [
+  "milestones": [
     {
       "index": 1,
       "requirement": "stats CLI 能读取单个 CSV 文件并打印 count/mean/min/max 统计摘要",
@@ -20,5 +19,7 @@
       "user_intent": "让 stats 支持一次处理多个文件,且不能破坏已有的功能,JSON 输出保持数组格式",
       "test_id": "stats_multi"
     }
-  ]
+  ],
+  "max_rounds": 6,
+  "max_corrections": 1
 }
