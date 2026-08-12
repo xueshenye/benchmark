@@ -121,5 +121,6 @@ a <消息>     agent 在提问澄清,你回答它(留在当前里程碑;回答�
 | 判别器端到端 | `-a benchmark.partial_devteam:PartialDevteamClaude` | `reward=0` |
 | 多模型对比(agent-only) | `./benchmark/run_model_compare.sh`(默认 flash / glm-5.2 / kimi-k3 / **kimi-k2.5 弱模型校准**;DeepSeek + Novita 双后端,user-LLM 固定) | 逐模型 reward/逐轮/轮数/澄清/纠正/force/判分分歧/时长/费用;弱模型掉分 → 难度下界 |
 | 长沙箱观察跑 | 加 `--plugin benchmark.debug_long_sandbox_plugin:LongSandboxPlugin`(`NOVITA_SANDBOX_TIMEOUT=<秒>` 可配,默认 2h;1h 沙箱只够 ~6 轮) | 复杂任务跑完 + transcript 同步 |
+| **Reward 模式** | `--ve REWARD_MODE=dense`(默认,每轮连续 0-1 部分分)/ `--ve REWARD_MODE=binary`(旧 0/1) | dense 给 RLVR 部分分信号;binary 复现旧判别语义。scorer 读 verifier 环境变量 |
 
 > **难度校准结论(2026-08-12)**:最小可用模型(flash)在硬化前 reward=1,任务对"模型对比"分辨率不足。硬化后(见 §2/§3 与 PROJECT_STATE §5):M4 反转作用域收紧(viewer 可 commit 但 event add/remove 仍仅 owner/member)、`check` 精度(干净零输出/字符串 TODO 不误报/未定义需真 AST)、status 精确计数、隐藏边界用例。已验证:参考解仍 1、判别器仍 0、**"viewer 可管日程"偷懒实现 → round_4=0**(旧 scorer 会给 1)。DeepSeek 后端仅 2 个 distinct agent 模型,`claude-sonnet-5` 静默别名成 flash;Novita Anthropic 端点是第 3+ 模型来源(但非全部模型支持 anthropic)。

@@ -36,7 +36,7 @@ The agent is registered via Harbor's import-path factory (`-a benchmark.interact
 
 ## Sample task (`tasks/benchmark/multi-round-cli-demo/`)
 
-3-round cumulative scenario (stats CLI): round 1 basic summary → round 2 `--output-json` → round 3 multiple files (keep 1–2 working). `environment/scenario.json` is baked into the container at `/workspace/scenario.json` and read by both the agent (via `exec cat`) and the verifier.
+3-round cumulative scenario (stats CLI): round 1 basic summary → round 2 `--output-json` → round 3 multiple files (keep 1–2 working). `environment/scenario.json` is baked into the container at `/scenario.json` (NOT `/workspace` — it is the benchmark's ground truth and must stay out of the agent's reach; the harness reads it via `exec cat` and the verifier reads it too).
 
 ## Task suite (T1–T6, complexity ladder)
 
@@ -57,6 +57,7 @@ Authoring rules that carry across tasks (see `docs/task-suite-design.md` §2.3):
 - **`reward` = product of per-round scores** → sparse 0/1 that distinguishes "only completed the last round" (early rounds = 0 → reward 0) from "truly completed the full multi-turn task" (all 1 → reward 1). Per-round keys give dense RLVR diagnostics; all keys land in `VerifierResult.rewards`.
 - **Harbor only reads `reward.txt` (scalar) or `reward.json` (flat dict str→number).** The requirement's stated `rewards.txt` / the template comment's `rewards.json` do **not** exist in the verifier code — do not use them.
 - Multi-key reward allows custom per-round keys; `min_reward` gating is per-step only (Design B), not used in Design A's single trial.
+- **Reward 双模式**(devteam 先落地,2026-08-12):scorer 读 verifier 环境变量 `REWARD_MODE`,默认 **`dense`**(每轮返回连续 0-1 = 子检查通过比例,`reward`=逐轮乘积 → 有部分分,RLVR 更友好)/ **`binary`**(旧 0/1,`reward`∈{0,1})。切换:`harbor run ... --ve REWARD_MODE=binary`(verifier env 唯一入口,`[verifier.env]` 是字面量、进程 env 不透传)。参考解双模式全 1;判别器 dense 有部分分(如 round_3=0.3)、binary 复现旧 0。
 
 ## Harbor CLI (0.20.0) — verified
 
@@ -86,7 +87,7 @@ No `harbor datasets list` in 0.20.0 — registry/dataset/task management is via 
 
 1. `cd tasks && ../.venv/bin/harbor task init <org>/<name>` (single-step skeleton).
 2. Write `instruction.md` (round-1 task). Add `environment/scenario.json` describing all rounds (`requirement`/`user_intent`/`test_id`).
-3. Dockerfile: base image + task runtime; `COPY scenario.json /workspace/scenario.json`; set `workdir=/workspace` in `task.toml`.
+3. Dockerfile: base image + task runtime; `COPY scenario.json /scenario.json` (keep it OUT of `/workspace` so the agent can't read future milestones — §6.12); set `workdir=/workspace` in `task.toml`.
 4. `tests/scorer.py`: implement a check function per `test_id`; reuse the pattern in the demo task (subprocess against the workspace; tolerant entry-point discovery).
 5. `tests/test.sh`: run the scorer and ensure it writes `reward.json` (with a fallback on failure).
 6. Validate locally (no Docker): run `solve.sh` (path-adjusted) then `scorer.py --base-dir <ws> --scenario <scenario> --reward-out <out>`, expecting all `round_*` = 1.
@@ -97,4 +98,4 @@ Repo `laude-institute/harbor` (its `AGENTS.md` = codebase layout; `LiteLLM` at `
 
 ## Status / next steps
 
-MVP + Design A+/Design B done and Novita-validated; **task suite T1–T6 implemented and locally validated** (todo-tracker / repofix / pkg-wordcount / support-bot / ticket-system / devteam; see "Task suite" above) plus the **clarification sub-loop** and **manual human-user mode** (`USER_SIMULATOR=manual` → `benchmark/manual_user.py`) framework capabilities. Next: run each new task 1–2× end-to-end on Novita (needs `.env` credentials — `NOVITA_API_KEY` + `USER_LLM_*` + `ANTHROPIC_*`), observing user-LLM judgement fidelity on harder tasks and watching for judge-vs-scorer divergence (especially T4's M4 "follow the customer's language", T5's M4 soft-delete-reversal, and T6's M4 viewer-permission-reversal overturns), then push RLVR (reward.json multi-key → `VerifierResult.rewards`). Design B refactor path stays available (native multi-step + step-wise runner via `--plugin benchmark.design_b_plugin:DesignBPlugin`).
+MVP + Design A+/Design B done and Novita-validated; **task suite T1–T6 implemented and locally validated** (todo-tracker / repofix / pkg-wordcount / support-bot / ticket-system / devteam; see "Task suite" above) plus the **clarification sub-loop** and **manual human-user mode** (`USER_SIMULATOR=manual` → `benchmark/manual_user.py`) framework capabilities. **devteam 已 Novita 端到端 + 多模型 grid**:硬化后区分度成立 —— 4 后端多 API grid(zai/moonshot/aliyun/deepseek)中 **zai/glm-5.2=reward 1**(3 澄清、分歧 0),deepseek-flash/qwen3.5-flash=0(不问就猜 → M3/M4 挂),kimi-k3 待沙箱恢复重验。**reward 双模式**(`REWARD_MODE` dense 默认 / binary 选项,`--ve` 传入)+ **超时修复**(novita.py `request_timeout=0` + 插件,uv sync 需重打)。Next: kimi 超时修复验证(沙箱恢复后)、devteam 其它模型/dense reward 端到端观察 judge-vs-scorer 分歧,then push RLVR (reward.json multi-key → `VerifierResult.rewards`)。Design B refactor path stays available (native multi-step + step-wise runner via `--plugin benchmark.design_b_plugin:DesignBPlugin`).

@@ -6,4 +6,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
-COPY scenario.json /workspace/scenario.json
+# scenario.json is the benchmark's ground truth (harness + verifier read it);
+# keep it OUT of /workspace so the agent can't peek at future milestones.
+COPY scenario.json /scenario.json

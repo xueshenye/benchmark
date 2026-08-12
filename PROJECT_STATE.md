@@ -16,6 +16,11 @@
 
 **reward 协议(与需求原文的偏差)**:需求写的是 `/logs/verifier/rewards.txt`,但 Harbor 0.20.0 verifier 只读 `reward.txt`(标量)或 `reward.json`(扁平 dict str→number)。本项目用 **`/logs/verifier/reward.json`**:`{"round_1":0|1, ..., "reward":<乘积>}`。多键 reward 是产品,documentation 里记录的 `rewards.json`/`rewards.txt` 均不存在,勿用。
 
+**reward 双模式(2026-08-12 新增,devteam scorer 已实现)**:scorer 读 `REWARD_MODE` 环境变量(verifier 侧,`harbor run --ve REWARD_MODE=...` 传入),默认 **`dense`**:
+- `dense`(默认):每轮 check 返回**连续 0-1**(子检查通过比例,如判别器 M3=0.3/M4=0.46),`reward`=逐轮分数乘积 → 有部分分,对 RLVR 更友好;
+- `binary`(旧):每轮 0/1,`reward`∈{0,1} → 与历史结果完全一致(判别器仍 1,1,0,0→0)。
+参考解在两种模式下都全 1。`run_model_compare.sh` 用 `REWARD_MODE` 透传(`--ve REWARD_MODE=$REWARD_MODE`,默认 dense);kimi 重试用 binary 复现旧语义。
+
 ## 2. 当前架构(双路径)
 
 **Design A+**(本节,自定义 agent,单 trial,动态里程碑)—— 主实现,全部功能/验证完备;**Design B**(原生 multi-step,每步一轮 + 步间 runner,实验性、纯增量可回退)—— 见 §8 与 `tasks/benchmark/multi-round-cli-demo-multistep/`。
@@ -23,7 +28,7 @@
 ```
 harbor run -e novita --env-file .env -p <task> -a benchmark.interactive_agent:InteractiveUserClaude -m <model>
   │ agent.run() [宿主进程,PYTHONPATH=. 导入 benchmark/]
-  │   读容器内 scenario.json(exec cat /workspace/scenario.json)
+  │   读容器内 scenario.json(exec cat /scenario.json)
   │   TurnController 驱动动态轮次:
   │   Round 1: instruction = instruction.md(初始任务)→ claude --print 执行 → 捕获输出
   │   每轮后: 抓取 /workspace 快照 → diff(上轮 vs 本轮)→ 作为"真实改动证据"
@@ -86,7 +91,7 @@ count=5 mean=3.0 min=1.0 max=5.0
 - 在 `/workspace` 下给出实现文件,并确保可以直接运行。
 ```
 
-**scenario.json(environment/,会烘焙进容器 /workspace/scenario.json,verifier 与 agent 都读它;Design A+ 新 schema):**
+**scenario.json(environment/,会烘焙进容器 /scenario.json(不在 /workspace,防 agent 偷看未来里程碑——见 §6.12);harness 与 verifier 读它;Design A+ 新 schema):**
 ```json
 {
   "user_persona": "一位数据产品经理,说话简洁直接,很在意 CLI 的向后兼容和易用性。",
@@ -163,7 +168,12 @@ count=5 mean=3.0 min=1.0 max=5.0
 | 端到端 todo-tracker #2(07:50,已修 scorer) | ✅ **round_1,2,3,4=1,reward=1**。首个非 demo 任务的完整 e2e:4 轮全 satisfied、无纠正轮;user-LLM 消息忠实(引用实际行为:JSON 数组、[done] 后缀、priority 默认、report 三行含 0、search 大小写不敏感)且 **判定与 verifier 完全一致**(judge-vs-scorer 分歧=0) |
 | 端到端 devteam #1(15:31) | ❌ **AgentTimeoutError,无 reward** —— 交互正常推进到第 6 轮(M4 进行中),撞上 **Novita 沙箱 1h 自动销毁**(`_SANDBOX_TIMEOUT_SEC=3600`),agent 读 `/logs/agent/claude-code.txt` 时沙箱已删 → 整轮 errored;transcript 未同步(§6.10) |
 | 端到端 devteam #2(16:36,长沙箱插件) | ✅ **round_1,2,3,4=1,reward=1**,0 异常,54m 9s。`--plugin benchmark.debug_long_sandbox_plugin:LongSandboxPlugin` 把沙箱上限提到 2h。5 轮 agent + 1 次澄清(M4),judge-vs-scorer 分歧=0。观察:①**user 反馈真实且锚定实际行为**("权限拦截都好使/回滚完文件内容对/测试 38 条全绿";M4 澄清精确划定反转范围:commit/rollback 全员、event 维持、check 只扫 .py);②**agent 在引导下完成全部里程碑**:M1 轮超量交付(M1+M2+21 测试),M4 主动反问(澄清子循环)后正确执行 **viewer 权限反转**(commit/rollback 改全员 = 遗忘旧规则)且 M1–M3 全保留(记忆);③**交流轮充足**:M1=1/M2=1/M3=1/M4=2,5/12 轮,无 force-advance;但每轮 ~8-9 分钟 → 1h 沙箱只够 ~6 轮,`max_rounds=12` 实际不可达,需要长沙箱或压紧任务 |
-| devteam 难度硬化(2026-08-12) | 🔧 **最小可用模型 flash 在旧 scorer 下 reward=1 → 任务对"模型对比"分辨率不足**(但判别器仍把"只做部分里程碑"判 0)。已硬化 scorer + 修参考解 + 补 scenario 权限表述:①M4 反转**作用域收紧**——viewer 能 commit/rollback 但 **event add/remove 仍仅 owner/member**(旧参考解漏了 viewer 管日程的拦截,已加 `require_editor`);②`check` **精度**——干净文件零输出、字符串里的 `"TODO"` 不得误报(参考解改 `tokenize` 只认 COMMENT 令牌)、未定义变量需真 AST;③`status` 断言**精确计数**;④边界用例——空项目提交、回滚不存在提交/移除不存在成员/日程报错、非成员读写全拦、unicode+嵌套文件名。本地验证:参考解仍 reward=1、判别器仍 0、**"viewer 可管日程"的偷懒实现 → round_4=0**(旧 scorer 会给 1,证明硬化有效)。run #3(深夜)用**硬化后 scorer + 新 prompt 规则**跑,将给出 flash 是否仍 1 的直接证据 |
+| devteam 难度硬化(2026-08-12) | 🔧 **最小可用模型 flash 在旧 scorer 下 reward=1 → 任务对"模型对比"分辨率不足**(但判别器仍把"只做部分里程碑"判 0)。已硬化 scorer + 修参考解 + 补 scenario 权限表述:①M4 反转**作用域收紧**——viewer 能 commit/rollback 但 **event add/remove 仍仅 owner/member**(旧参考解漏了 viewer 管日程的拦截,已加 `require_editor`);②`check` **精度**——干净文件零输出、字符串里的 `"TODO"` 不得误报(参考解改 `tokenize` 只认 COMMENT 令牌)、未定义变量需真 AST;③`status` 断言**精确计数**;④边界用例——空项目提交、回滚不存在提交/移除不存在成员/日程报错、非成员读写全拦、unicode+嵌套文件名。本地验证:参考解仍 reward=1、判别器仍 0、**"viewer 可管日程"的偷懒实现 → round_4=0**(旧 scorer 会给 1,证明硬化有效) |
+| 端到端 devteam #3(00:25,硬化后 scorer + 新 prompt 规则) | ✅ 完成、0 异常、22m53s(插件稳定:长沙箱跑完 + transcript 同步)。**硬化生效、直接回答"是否太简单"**:最小模型 flash **不再全 1**——`round_1,2,3=1,round_4=0,reward=0`。M4 反转被 agent **过度泛化**("只读概念彻底没了"):event add/remove 仍走 `require_member`(viewer 可管日程,会话代码里 `require_editor` 计数 0),被硬化 M4 检查"viewer 不得管理日程"判 0。**judge-vs-scorer 分歧=1**:user 判 M4 satisfied(只验了 check 格式/autocomplete/viewer 提交,没测 viewer-event 限制),verifier 判 0——正是 §2.4 的哨兵场景,实证"user 判定是对话控制信号、verifier 才是最终裁判"。**结论**:硬化后任务对"需求作用域把握"有区分度 |
+| 端到端 devteam grid #1(00:51,deepseek-v4-flash,硬化后) | ✅ 完成、0 异常、25m37s。**round_1,2,3=1,round_4=0,reward=0**(与 run #3 同结果但**根因不同**):这次是 `check` **误报字符串里的 TODO**——agent 把 `msg = "# TODO: not a marker"` 也报了 `todo_string.py:1: 发现 TODO 标记`,被硬化精度检查(只认 COMMENT 令牌、字符串不误报)判 0;check 的语法/未定义变量、autocomplete、viewer 提交、日程拦截全对。**user 建议功能验证**:user 给了一条体验建议("history 能带出每次提交动了哪些文件")且 agent 采纳实现(M2 轮即落地)。judge-vs-scorer 分歧=1。**结论**:flash 两次独立运行以不同方式栽在 M4(一次作用域过度泛化、一次 check 精度),硬化区分度成立 |
+| 端到端 devteam grid #2(01:23,deepseek-v4-pro,硬化后) | ✅ 完成、0 异常、22m27s。**round_1,2=1,round_3=0,round_4=0,reward=0**——pro **不如 flash**:M3 也挂了(6 轮、2 纠正、0 澄清、**judge-vs-scorer 分歧=3**)。M3 根因(已用会话重建最终代码复现):status 输出 `文件数: 2`(≠要求钉死的 `代码文件数: 2`;user 明说"别自己造别的写法")+ dashboard 写 `carol_dashboard.html`(≠要求的 `dashboard-<项目名>.html`,该名在 requirement 与 user_knowledge 里、**澄清可问出,但 pro 全程 0 澄清**)。M4 根因:check **漏报语法错误与未定义变量**(只做了 TODO 且字符串误报),而 user 判定 M4 satisfied 自称"三种都抓到了"——**user 判定失实**。**结论**:两个真实模型都以真实缺陷 reward=0,参考解 1;pro 全程不澄清 → 恰好撞上"主动澄清"能力轴 |
+| devteam 多API grid(2026-08-12,4 后端) | ✅ 4 模型全部完成:zai/glm-5.2 **reward=1**(3 澄清、分歧 0);deepseek-flash reward=0(R4 挂);aliyun/qwen3.5-flash reward=0(R2-R4 挂、1 force-advance);moonshot/kimi-k3 reward=0(R1=1,R2-4=0,见下条)。**结论**:硬化后任务区分度成立,区分轴≈"细节拿不准是否主动澄清";多 API 打通,踩坑 **`--env-file` 是 `load_dotenv(override=True)`,会覆盖命令行设的 `ANTHROPIC_BASE_URL` → agent 一直打 DeepSeek**;修复=每 backend 生成临时 env(剥掉 .env 的 `ANTHROPIC_*` 换成该 backend),模型 id 用各端点 Anthropic 原生的(不带 `[1m]`/OpenAI 目录前缀) |
+| 端到端 devteam kimi-k3 重跑(07:33,binary reward,超时修复后) | ✅ 完成、**62 分钟无超时**(request_timeout 修复验证成功:旧 30 分钟单命令上限不再误杀慢轮)。**reward=0,R1=1,R2-4=0**——kimi 最弱:仅 M1 过;M2 起**不问就猜**:命令格式猜错(`--project` vs 位置参数)、rollback 语义猜错(生成新提交而非恢复文件)。3 轮、1 澄清、1 纠正、分歧 1。**grid 至此全部完成**:glm=1,flash/qwen/kimi=0 |
 
 run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM)在真实部署下工作;round_2=0 不是 harness bug,是任务规格问题。run #3 证明 **ground-truth 显式化 → user-LLM 忠实转述 → agent 正确实现**的链路成立:把格式/约束细节写进 `requirement`+`user_intent`,Kimi 会原样传达(甚至补充理由),agent 据此实现。run A+ #1/#2 证明 **动态判定 + 工作区证据在真实部署下成立**,且 `satisfied` 判定与 verifier 一致(reward=1)。devteam #2 进一步证明:**复杂 4 里程碑任务 + 权限反转**在真实部署下 judge-vs-scorer 完全一致;user-LLM 在 M4 澄清轮给出的范围约束(只放开 commit/rollback、event 维持、check 收 .py)正是 verifier 所查的边界。
 
@@ -181,8 +191,8 @@ run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM
 8. **AGENT_END 钩子时机**:非 mounted 环境在 `AGENT_END` 时当前步 agent 输出**尚未下载到宿主**(`_sync_agent_output` 在步末才执行)。→ 可靠读点在**归档后**(自定义 trial 的 `_after_step`,`_archive_step_outputs` 同步执行)或 `VERIFICATION_START`。
 9. **scorer 候选入口发现必须跳过"文件不存在"**:todo-tracker e2e(07:26)agent 把实现写在 `/workspace/todo.py`(合法),但 scorer 候选 1 `python3 src/todo.py` 在**文件缺失时是 rc=2 的 CompletedProcess**(python 报 "can't open file"),不是 FileNotFoundError → `run_todo` 把 rc=2 当结果返回、短路了真正的 `/workspace/todo.py` → verifier 全 0(而 user-LLM 判定全 satisfied,agent 实现本身完全正确)。demo 的 `run_stats` 靠 `rc==0 and stdout` 门槛躲过;todo scorer 改为**先 `os.path.exists(cmd[-1])` 跳过不存在入口**。**教训**:多候选入口的 scorer 必须显式跳过缺失文件,或要求 rc==0+非空 stdout 才接受候选。
 10. **Novita 沙箱 1h 自动销毁 + 可观测性**(devteam e2e,2026-08-11):沙箱寿命是安装包硬编码 `NovitaEnvironment._SANDBOX_TIMEOUT_SEC = 3600`(novita.py:693),在 `_create_sandbox` 时作 `timeout=` 传给 novita_sandbox SDK;**task.toml `[environment]` 没有沙箱寿命字段**(只有 `build_timeout_sec` 模板构建),也不读环境变量。devteam #1 在第 6 轮撞上限 → 沙箱被删 → agent 的 `_read_agent_output` exec 抛 `TimeoutException: The sandbox was not found` → 整 trial errored,**无 verifier、transcript 未同步**。**对策**:①观察跑用 `--plugin benchmark.debug_long_sandbox_plugin:LongSandboxPlugin`(`on_job_start` 改类属性;值取 `NOVITA_SANDBOX_TIMEOUT`,默认 2h;计费按实际时长不是上限);②`interactive_agent.py` 增加**每轮 `[decision]` 日志 + 增量写 transcript**,半途死也能复盘;③**harbor CLI 进程要能 import `benchmark`**:`PYTHONPATH=/ssd/xueshenye/proj`(缺了报 `No module named 'benchmark'`,trial 起不来)。**教训**:每轮 ~8-9 分钟(claude --print + 快照 + user-LLM)下,1h 沙箱只够 ~6 轮,复杂任务要么压紧轮次、要么提供可配置沙箱寿命。
-
-## 7. 未完成工作
+11. **novita_sandbox 单命令 30 分钟请求超时(慢模型误杀)**:kimi-k3 在 M2 的 claude 轮流式输出 >30 分钟被掐(`Execution timed out — the 'timeout' option can be used to increase this timeout`,来自 `novita_sandbox command.run` 的 `request_timeout`)。机制:Harbor `_run_command` 传 `timeout=timeout_sec or 0`(0=命令连接无限,SDK 语义),但**不传 `request_timeout`** → SDK `ConnectionConfig` 默认 `LEGACY_REQUEST_TIMEOUT=1800`(30 分钟),对流式命令请求封顶 → 慢模型单轮被误杀。**修复**:①venv 补丁 `novita.py:1394 _run_command` 的 `commands.run(...)` 加 `request_timeout=0`(SDK `_get_request_timeout(0)=None` = 无限;**uv sync 会冲掉,需重打**);②`LongSandboxPlugin` 加 runtime monkeypatch(`ConnectionConfig.get_request_timeout → None`,插件跑就生效,不依赖包补丁);总时长仍受 trial/agent 超时 + 沙箱寿命(插件 2h)约束。**已验证**:kimi 重跑(07:33)62 分钟无超时跑完,修复端到端有效(旧 30 分钟单命令上限不再误杀慢轮;之前 error 的那轮 M2 正常执行)。
+12. **scenario.json 泄漏给 agent(导致 M1 预知 M4)**:scenario.json 原被 `COPY` 进 `/workspace`,而 agent 的工作目录就是 /workspace → 它列目录就看到并 `Read` 了它(实测多轮运行都出现 `Read: /workspace/scenario.json`),从而**在一开始就知道全部 4 个里程碑(含 M4 的 viewer 反转)**。后果:①"跳跃/超前实现"(M1 就做 viewer-commit、提前做 M2 的 VCS)大部分是泄漏产物,不是模型真实行为;②破坏"渐进揭示"核心设计(本应每轮只从用户消息学一个里程碑);③此前所有端到端/grid 结果都被此污染。**修复**:scenario.json 移到 `/scenario.json`(不在 /workspace),`Dockerfile`/`interactive_agent.py`/`scorer.py` 三处路径同步改;harness 与 verifier 照常读,agent 不再自然可见。**教训**:ground truth 必须放 agent 工作目录之外;最终 clean grid 基于此重跑。
 
 - [x] **run #3** → round_1,2,3=1,reward=1(user-LLM 转述质量已确认良好)
 - [x] **Design A+(动态里程碑 + 纠正轮)**:新 schema(`milestones`/`max_rounds`/`max_corrections`)、`TurnController` 状态机、`judge_and_speak` 判定、scorer 遍历 milestones、测试 36/36(需求 1/2 落地;需求 3 更全面能力考察留待更复杂任务)
@@ -219,7 +229,11 @@ run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM
 - 更多任务/轮次;评估"自然、连续、必要"的介入质量。
 - RLVR 落地:reward.json 多键 → VerifierResult.rewards → 训练信号。
 
-**多模型评估(2026-08-12 新增)**:`benchmark/run_model_compare.sh` —— 固定 user-LLM(.env 的 kimi-k3)、只变 **agent 模型**(DeepSeek + Novita 双后端),逐模型输出 reward/逐轮/agent 轮数/澄清/纠正/force-advance/判分分歧/时长/费用。**关键发现**:①DeepSeek Anthropic 端点只有 `deepseek-v4-flash`/`deepseek-v4-pro` 两个 distinct 模型,**`claude-sonnet-5` 被静默别名成 flash**(探测证实,勿当第 3 个);②Novita 提供 Anthropic 兼容端点(`https://api.novita.ai/anthropic/v1/messages`)可作 agent 后端,但**并非所有模型支持 anthropic**(已验支持:kimi-k2.5/kimi-k3/glm-5.2/deepseek-v4-flash;不支持:ling-3.0-tiny/gemma-4-26b/qwen3.5-27b/glm-4.5-air/glm-4.7-flash/deepseek-v3-turbo);③默认 grid = flash + glm-5.2 + kimi-k3 + **kimi-k2.5(弱模型,探难度下界)**。**user 体验增强**:prompt_templates 规则 7 强化——user-LLM 要"真的上手跑过"agent 做的东西,并在合适时机**至少给一条**关于 UI/易用性、编码流畅度、功能完整度的改进建议(口语化期望,verifier 不查、不判 false),模拟真实用户反馈。
+**多模型评估(2026-08-12 新增)**:`benchmark/run_model_compare.sh` —— 固定 user-LLM(.env 的 kimi-k3)、只变 **agent 模型**,逐模型输出 reward/逐轮/agent 轮数/澄清/纠正/force-advance/判分分歧/时长/费用。**关键发现**:①DeepSeek Anthropic 端点只有 `deepseek-v4-flash`/`deepseek-v4-pro` 两个 distinct agent 模型,**`claude-sonnet-5` 被静默别名成 flash**(探测证实,勿当第 3 个);②**多 API 已打通**:脚本支持 deepseek/zai(智谱 GLM)/moonshot(Kimi)/aliyun(Qwen)四个 Anthropic 兼容后端,base URL 与模型 id 从 .env 解析;**踩坑:harbor `--env-file` 是 `load_dotenv(override=True)`,会覆盖命令行设的 `ANTHROPIC_BASE_URL` → agent 一直打 DeepSeek、任何非 deepseek 模型吃 400**。修复=每 backend 生成临时 env(剥掉 .env 的 `ANTHROPIC_*` 换成该 backend)。③**首次 4 模型 grid 结果**:zai/glm-5.2 = **reward=1**(3 澄清、分歧=0,唯一通过);deepseek-flash = 0(R4 挂);aliyun/qwen3.5-flash = 0(R2-R4 挂、1 force-advance,最差);moonshot/kimi-k3 = **error**(慢轮触发 novita 单命令超时,有效 0)。**结论**:任务区分度成立,区分轴≈"细节拿不准是否主动澄清"——会澄清的 glm-5.2 一次没猜错、分歧 0;不问就猜的 flash/qwen 都栽;慢模型会被 sandbox 单命令超时误杀(需调大)。**user 体验增强(已生效)**:prompt_templates 规则 7 强化——user-LLM 要"真的上手跑过"agent 做的东西,并在合适时机**至少给一条**关于 UI/易用性、编码流畅度、功能完整度的改进建议(口语化期望,verifier 不查、不判 false);多次实测 user 给建议且 agent 采纳(history 带改动文件、member list 按角色排序等)。
+
+**EvoCode-Bench 对标改进(2026-08-12)**:给 `run_model_compare.sh` 加 **MT@k 多轮采样评估**(默认 `MT@2`,任务级独立重跑,MT@k=达 reward=1 占比,适配 EvoCode-Bench 的 MT@4;每次 attempt 结果缓存支持续跑)+ **per-round 均值衰减曲线 + 首败轮次** + **reference/nop 基线行**(本地算,不跑 harbor)。未做(记不足):扩任务套件、轮级并行采样、任务侧加第 5 里程碑。
+
+**最终 clean dense grid(2026-08-12,MT@2,scenario 泄漏修复后)**:4 模型 × 2 attempt = 8 次,`REWARD_MODE=dense`。结果:**全部 MT@2=0**(无模型达 reward=1),mean 排名 **kimi 0.565 > glm 0.411 > qwen 0.363 > flash 0.248**;所有模型 R1=1,衰减自 R2/R3;reference=1 / nop≈0.004。**与泄漏版对比**:泄漏时 glm 曾 reward=1、各模型早期里程碑靠读 scenario.json 拿满分;修复后任务显著变难,泄漏确实在抬高早期分数。**单次方差大**(glm a2 重跑很低)→ MT@k 必要性。README §5 已填此表;早期 binary/泄漏版结果仅作参考。
 
 ## 9. 常用命令
 

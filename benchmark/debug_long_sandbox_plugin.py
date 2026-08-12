@@ -33,7 +33,14 @@ class LongSandboxPlugin(BaseJobPlugin):
     ``NovitaEnvironment._SANDBOX_TIMEOUT_SEC = 3600`` (1 h auto-kill) with no
     task.toml / env lever. This plugin patches the class attribute before the
     sandbox is created; the value comes from ``NOVITA_SANDBOX_TIMEOUT`` (seconds)
-    or defaults to 2 h. Only affects runs that pass
+    or defaults to 2 h.
+
+    It also removes the novita_sandbox SDK's per-request timeout default (30 min)
+    so a slow model's single agent round is not killed mid-stream — the runtime
+    safety net for the venv patch applied to ``harbor/environments/novita.py``
+    ``_run_command`` (``request_timeout=0``), which ``uv sync`` would wipe.
+
+    Only affects runs that pass
     ``--plugin benchmark.debug_long_sandbox_plugin:LongSandboxPlugin``.
     """
 
@@ -43,8 +50,18 @@ class LongSandboxPlugin(BaseJobPlugin):
         timeout = int(os.environ.get("NOVITA_SANDBOX_TIMEOUT", _DEFAULT_SANDBOX_TIMEOUT_SEC))
         old = NovitaEnvironment._SANDBOX_TIMEOUT_SEC
         NovitaEnvironment._SANDBOX_TIMEOUT_SEC = timeout
+
+        # Remove the SDK's per-request timeout (30-min default) for this job's
+        # sandbox connections: get_request_timeout(None) -> None == unlimited.
+        from novita_sandbox.core import connection_config
+
+        def _unlimited(self, request_timeout=None):  # noqa: ANN001
+            return None
+
+        connection_config.ConnectionConfig.get_request_timeout = _unlimited
         logger.info(
-            "LongSandboxPlugin: raised Novita sandbox timeout %ss -> %ss (debug observation run)",
+            "LongSandboxPlugin: raised Novita sandbox timeout %ss -> %ss and "
+            "removed per-request timeout (debug observation run)",
             old,
             timeout,
         )

@@ -34,7 +34,7 @@ from benchmark.controller import TurnController
 from benchmark.scenario import Scenario
 from benchmark.user_simulator import UserSimulator
 
-SCENARIO_PATH_DEFAULT = "/workspace/scenario.json"
+SCENARIO_PATH_DEFAULT = "/scenario.json"
 AGENT_OUTPUT_PATH = "/logs/agent/claude-code.txt"
 MAX_AGENT_OUTPUT_CHARS = 6000
 # Workspace evidence shown to the user-LLM so its "satisfied" judgement is

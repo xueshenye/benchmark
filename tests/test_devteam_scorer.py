@@ -53,6 +53,23 @@ def test_pick_returns_distinct_names(scorer) -> None:
     assert all(n in scorer._NAME_POOL for n in names)
 
 
+def test_finalize_dense_vs_binary(scorer, monkeypatch) -> None:
+    monkeypatch.setattr(scorer, "REWARD_MODE", "dense")
+    assert scorer._finalize(6, 10) == pytest.approx(0.6)
+    assert scorer._finalize(10, 10) == 1.0
+    monkeypatch.setattr(scorer, "REWARD_MODE", "binary")
+    assert scorer._finalize(6, 10) == 0.0
+    assert scorer._finalize(10, 10) == 1.0
+
+
+def test_score_handles_labeled_pairs_and_crashes(scorer) -> None:
+    # Sub-checks are (label, callable) pairs; a crash in one counts as a failure.
+    passed, total = scorer._score(
+        [("ok", lambda: True), ("no", lambda: False), ("boom", lambda: 1 / 0)]
+    )
+    assert (passed, total) == (1, 3)
+
+
 def test_scenario_and_checkers_are_consistent(scorer) -> None:
     """Every milestone test_id has a checker and no checker is orphaned."""
     scenario = json.loads(_SCENARIO_PATH.read_text(encoding="utf-8"))
