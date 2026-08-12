@@ -42,3 +42,9 @@ tests/test_ticket_system_scorer.py
 
 # Working README draft (kept on disk, not committed)
 README.16:12.md
+
+# Claude Code documents
+.claude/
+CLAUDE.md
+PROJECT_STATE.md
+req.txt
