@@ -31,3 +31,14 @@ eval_results/
 
 # Node (if docs tooling is added)
 node_modules/
+
+# T4/T5 tasks — excluded from version control (files kept on disk)
+tasks/benchmark/support-bot/
+tasks/benchmark/ticket-system/
+benchmark/partial_support_bot.py
+benchmark/partial_ticket_system.py
+tests/test_support_bot_scorer.py
+tests/test_ticket_system_scorer.py
+
+# Working README draft (kept on disk, not committed)
+README.16:12.md
