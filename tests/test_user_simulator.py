@@ -115,6 +115,105 @@ def test_parse_turn_decision_strips_fences() -> None:
     assert decision.message == "很好"
 
 
+def test_parse_turn_decision_defaults_action_judge() -> None:
+    decision = parse_turn_decision(json.dumps({"satisfied": True, "message": "hi"}))
+    assert decision.action == "judge"
+    assert decision.satisfied is True
+
+
+def test_parse_turn_decision_parses_action_answer() -> None:
+    decision = parse_turn_decision(
+        json.dumps({"action": "answer", "message": "知识库在 /workspace/knowledge_base"})
+    )
+    assert decision.action == "answer"
+    assert decision.satisfied is False
+
+
+def test_parse_turn_decision_unknown_action_falls_back_to_judge() -> None:
+    decision = parse_turn_decision(
+        json.dumps({"action": "banana", "satisfied": False, "message": "x"})
+    )
+    assert decision.action == "judge"
+
+
+def test_judge_prompt_includes_clarification_rule_and_user_knowledge() -> None:
+    scenario = Scenario.model_validate(
+        {
+            "user_persona": "运营",
+            "milestones": [
+                {
+                    "index": 1,
+                    "requirement": "kb",
+                    "user_intent": "做个客服机器人",
+                    "test_id": "kb",
+                    "user_knowledge": "知识库在 /workspace/knowledge_base",
+                },
+            ],
+            "max_rounds": 4,
+            "max_clarifications": 2,
+        }
+    )
+    prompts: list[str] = []
+
+    async def fake_llm(prompt: str) -> str:
+        prompts.append(prompt)
+        return json.dumps({"action": "judge", "satisfied": True, "message": "好"})
+
+    sim = UserSimulator(scenario, llm=fake_llm)
+    sim.start("task")
+    asyncio.run(sim.judge_and_speak(scenario.milestones[0], None, "out"))
+
+    # The user-LLM can answer clarifying questions from its own knowledge…
+    assert "知识库在 /workspace/knowledge_base" in prompts[0]
+    assert "action" in prompts[0]  # JSON schema includes the new field
+    # …while the faithfulness guard (rule 5) stays intact.
+    assert "不要凭空添加" in prompts[0]
+
+
+def test_render_prompt_includes_user_knowledge() -> None:
+    scenario = Scenario.model_validate(
+        {
+            "user_persona": "运营",
+            "milestones": [
+                {
+                    "index": 1,
+                    "requirement": "kb",
+                    "user_intent": "做个客服机器人",
+                    "test_id": "kb",
+                    "user_knowledge": "知识库在 /workspace/knowledge_base",
+                },
+            ],
+            "max_rounds": 4,
+        }
+    )
+    prompts: list[str] = []
+
+    async def fake_llm(prompt: str) -> str:
+        prompts.append(prompt)
+        return "现在做吧"
+
+    sim = UserSimulator(scenario, llm=fake_llm)
+    sim.start("task")
+    asyncio.run(sim.render_milestone(scenario.milestones[0], agent_output="out"))
+
+    assert "知识库在 /workspace/knowledge_base" in prompts[0]
+
+
+def test_judge_prompt_without_user_knowledge_omits_section() -> None:
+    prompts: list[str] = []
+
+    async def fake_llm(prompt: str) -> str:
+        prompts.append(prompt)
+        return json.dumps({"satisfied": True, "message": "好"})
+
+    sim = UserSimulator(SCENARIO, llm=fake_llm)
+    sim.start("task")
+    asyncio.run(sim.judge_and_speak(SCENARIO.milestones[0], SCENARIO.milestones[1], "out"))
+
+    # No knowledge section header (the milestones carry no user_knowledge).
+    assert "【你作为用户自己掌握的信息" not in prompts[0]
+
+
 def test_parse_turn_decision_rejects_malformed() -> None:
     with pytest.raises(ValueError):
         parse_turn_decision("not json at all")

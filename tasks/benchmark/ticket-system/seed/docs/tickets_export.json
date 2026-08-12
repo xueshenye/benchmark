@@ -1,0 +1,46 @@
+[
+  {
+    "id": 1001,
+    "title": "登录页打不开",
+    "description": "用户反馈登录时页面白屏",
+    "reporter": "王小明",
+    "status": "closed",
+    "priority": "high",
+    "assignee": "李工",
+    "created_at": "2026-07-01T09:30:00",
+    "resolved_at": "2026-07-01T14:20:00"
+  },
+  {
+    "id": 1002,
+    "title": "下单支付失败",
+    "description": "支付环节报错但订单未生成",
+    "reporter": "李华",
+    "status": "resolved",
+    "priority": "high",
+    "assignee": "王工",
+    "created_at": "2026-07-02T10:05:00",
+    "resolved_at": "2026-07-02T11:40:00"
+  },
+  {
+    "id": 1003,
+    "title": "优惠券无法使用",
+    "description": "结算时优惠券提示已过期",
+    "reporter": "陈静",
+    "status": "in_progress",
+    "priority": "medium",
+    "assignee": "赵工",
+    "created_at": "2026-07-03T15:00:00",
+    "resolved_at": null
+  },
+  {
+    "id": 1004,
+    "title": "收不到验证码短信",
+    "description": "多次请求验证码均未收到",
+    "reporter": "赵磊",
+    "status": "open",
+    "priority": "medium",
+    "assignee": null,
+    "created_at": "2026-07-04T08:50:00",
+    "resolved_at": null
+  }
+]

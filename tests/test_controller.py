@@ -40,7 +40,13 @@ class _FakeSimulator:
         self.turns.append((agent_output, message))
 
 
-def _scenario(n: int, *, max_rounds: int | None = None, max_corrections: int = 1) -> Scenario:
+def _scenario(
+    n: int,
+    *,
+    max_rounds: int | None = None,
+    max_corrections: int = 1,
+    max_clarifications: int = 2,
+) -> Scenario:
     return Scenario.model_validate(
         {
             "user_persona": "pm",
@@ -48,8 +54,9 @@ def _scenario(n: int, *, max_rounds: int | None = None, max_corrections: int = 1
                 {"index": i, "requirement": f"req{i}", "user_intent": f"intent{i}", "test_id": f"t{i}"}
                 for i in range(1, n + 1)
             ],
-            "max_rounds": max_rounds or (n * (1 + max_corrections)),
+            "max_rounds": max_rounds or (n * (1 + max_corrections + max_clarifications)),
             "max_corrections": max_corrections,
+            "max_clarifications": max_clarifications,
         }
     )
 
@@ -184,3 +191,112 @@ def test_max_corrections_zero_force_advances_on_first_unsatisfied() -> None:
     assert ctrl.milestone_ptr == 1
     assert ctrl.decisions[0]["forced_advance"] is True
     assert msg == "next milestone request"
+
+
+# ------------------------------------------------------------------ clarify path
+
+
+def test_clarification_answer_stays_on_milestone_without_correction() -> None:
+    sim = _FakeSimulator(
+        [TurnDecision(action="answer", message="知识库在 /workspace/knowledge_base")]
+    )
+    ctrl = TurnController(_scenario(3), sim)
+    asyncio.run(ctrl.next_user_message("", "INITIAL TASK"))  # round 1
+
+    msg = asyncio.run(ctrl.next_user_message("agent 问:知识库在哪?", "INITIAL TASK"))
+
+    assert ctrl.milestone_ptr == 0  # stays on milestone 1
+    assert ctrl.correction_count == 0  # no correction consumed
+    assert ctrl.clarification_count == 1
+    assert msg == "知识库在 /workspace/knowledge_base"
+    assert ctrl.decisions[0]["action"] == "answer"
+    assert ctrl.decisions[0]["satisfied"] is False
+    assert ctrl.decisions[0]["clarification_count"] == 1
+    assert ctrl.decisions[0]["forced_advance"] is False
+    assert sim.turns == [("agent 问:知识库在哪?", "知识库在 /workspace/knowledge_base")]
+
+
+def test_clarification_then_advance_resets_count() -> None:
+    sim = _FakeSimulator(
+        [
+            TurnDecision(action="answer", message="知识库在 /workspace/knowledge_base"),
+            TurnDecision(satisfied=True, message="做得好,下一个需求"),
+        ]
+    )
+    ctrl = TurnController(_scenario(3), sim)
+    asyncio.run(ctrl.next_user_message("", "INITIAL TASK"))
+
+    asyncio.run(ctrl.next_user_message("问题1", "INITIAL TASK"))  # answer round
+    assert ctrl.milestone_ptr == 0
+    assert ctrl.clarification_count == 1
+
+    asyncio.run(ctrl.next_user_message("实现了", "INITIAL TASK"))  # satisfied → advance
+    assert ctrl.milestone_ptr == 1
+    assert ctrl.clarification_count == 0  # reset on advance
+    assert ctrl.correction_count == 0
+    assert ctrl.decisions[1]["action"] == "judge"
+
+
+def test_clarification_resets_on_force_advance() -> None:
+    sim = _FakeSimulator(
+        decisions=[
+            TurnDecision(action="answer", message="答案 A"),
+            TurnDecision(satisfied=False, message="纠正 1"),
+            TurnDecision(satisfied=False, message="纠正 2"),
+        ],
+        renders=["milestone 2 需求"],
+    )
+    ctrl = TurnController(_scenario(2, max_corrections=1), sim)
+    asyncio.run(ctrl.next_user_message("", "INITIAL TASK"))
+
+    asyncio.run(ctrl.next_user_message("问题", "INITIAL TASK"))  # answer → clarification_count=1
+    assert ctrl.clarification_count == 1
+
+    asyncio.run(ctrl.next_user_message("out1", "INITIAL TASK"))  # correction 1
+    asyncio.run(ctrl.next_user_message("out2", "INITIAL TASK"))  # correction 2 → force-advance
+    assert ctrl.milestone_ptr == 1
+    assert ctrl.clarification_count == 0
+    assert ctrl.decisions[-1]["forced_advance"] is True
+
+
+def test_clarification_cap_exhausted_treated_as_correction() -> None:
+    # max_clarifications=0: the very first "answer" action degrades into a correction.
+    sim = _FakeSimulator([TurnDecision(action="answer", message="答案(但预算已耗尽)")])
+    ctrl = TurnController(_scenario(3, max_corrections=1, max_clarifications=0), sim)
+    asyncio.run(ctrl.next_user_message("", "INITIAL TASK"))
+
+    asyncio.run(ctrl.next_user_message("问题", "INITIAL TASK"))
+
+    assert ctrl.clarification_count == 0
+    assert ctrl.correction_count == 1  # treated as a normal correction
+    assert ctrl.milestone_ptr == 0
+    assert ctrl.decisions[0]["action"] == "answer"  # logged as decided
+
+
+def test_answer_budget_spent_then_correction_then_force_advance() -> None:
+    # max_clarifications=1: one answer round is honored; the next "answer" is a
+    # correction; a third unanswered round force-advances (max_corrections=1).
+    sim = _FakeSimulator(
+        decisions=[
+            TurnDecision(action="answer", message="答案 1"),
+            TurnDecision(action="answer", message="答案 2(应作纠正)"),
+            TurnDecision(action="answer", message="答案 3(应强制推进)"),
+        ],
+        renders=["milestone 2 需求"],
+    )
+    ctrl = TurnController(_scenario(2, max_corrections=1, max_clarifications=1), sim)
+    asyncio.run(ctrl.next_user_message("", "INITIAL TASK"))
+
+    asyncio.run(ctrl.next_user_message("问 1", "INITIAL TASK"))
+    assert ctrl.clarification_count == 1
+    assert ctrl.correction_count == 0
+
+    asyncio.run(ctrl.next_user_message("问 2", "INITIAL TASK"))  # over-cap → correction
+    assert ctrl.correction_count == 1
+    assert ctrl.clarification_count == 1
+
+    asyncio.run(ctrl.next_user_message("问 3", "INITIAL TASK"))  # correction 2 → force-advance
+    assert ctrl.milestone_ptr == 1
+    assert ctrl.correction_count == 0
+    assert ctrl.clarification_count == 0
+    assert ctrl.decisions[-1]["forced_advance"] is True

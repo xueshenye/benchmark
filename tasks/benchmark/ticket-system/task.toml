@@ -1,0 +1,30 @@
+schema_version = "1.3"
+artifacts = []
+
+[task]
+name = "benchmark/ticket-system"
+description = "Interactive multi-turn product-dev task: internal support-ticket HTTP service (CRUD, workflow, SQLite+SLA, soft-delete reversal)"
+authors = []
+keywords = ["multi-turn", "interactive", "product", "web", "http", "sqlite", "refactor"]
+
+[metadata]
+
+[verifier]
+timeout_sec = 600.0
+collect = []
+
+[verifier.env]
+
+[agent]
+timeout_sec = 3600.0
+
+[environment]
+network_mode = "public"
+build_timeout_sec = 900.0
+os = "linux"
+mcp_servers = []
+workdir = "/workspace"
+
+[environment.env]
+
+[solution.env]

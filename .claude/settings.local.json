@@ -41,7 +41,8 @@
       "Bash(git -c user.name=chenguangyao -c user.email=chenguangyao@local commit -m 'Initialize multi-turn agent benchmark project \\(Harbor-based\\) skeleton *)",
       "Bash(git commit -m 'Document uv environment and Harbor 0.20.0 CLI in README/CLAUDE.md *)",
       "Bash(.venv/bin/python -m pytest tests/ -q)",
-      "WebFetch(domain:arxiv.org)"
+      "WebFetch(domain:arxiv.org)",
+      "Bash(.venv/bin/python -c \"import ast; ast.parse\\(open\\('benchmark/debug_long_sandbox_plugin.py'\\).read\\(\\)\\); print\\('plugin compiles OK'\\)\")"
     ]
   }
 }

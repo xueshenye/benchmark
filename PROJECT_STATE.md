@@ -123,6 +123,9 @@ count=5 mean=3.0 min=1.0 max=5.0
 | T1 todo-tracker | `tasks/benchmark/todo-tracker/` | 4 | 空 | 状态持久化(todos.json)、数据建模、过滤/统计/搜索、跨进程一致性、回归 |
 | T2 repofix | `tasks/benchmark/repofix/` | 3 | **预置坏仓库 + 失败测试**(seed/ 烤进镜像) | 调试、边缘用例、自我验证(pytest)、重构(≥3 函数)、回归测试 |
 | T3 pkg-wordcount | `tasks/benchmark/pkg-wordcount/` | 3 | 空 | 真实生态(pip install -e + console 入口 + pytest)、包结构、API 设计、回归 |
+| T4 support-bot | `tasks/benchmark/support-bot/` | 4 | **预置知识库 + 订单 API mock + docs**(seed/ 烤进镜像;ground_truth/ 只给 verifier) | 客服机器人:知识库问答 → 订单 API 集成 → 包重构 + 批量 → 多语言 + 转人工;考察**长上下文**(复杂真实应用)、**主动澄清**(agent 提问 → user 回答)、**需求变更/大幅重构**、**长期记忆 + 遗忘被推翻规则**(语言规则翻转) |
+| T5 ticket-system | `tasks/benchmark/ticket-system/` | 4 | **预置业务文档 + 接口契约 + 样例导出**(seed/ 烤进镜像;ground_truth/ 只给 verifier) | **产品开发类**(内部工单系统 HTTP 服务):CRUD → 工作流/搜索/筛选 → 包重构+SQLite+SLA → **软删除反转**+统计;verifier **起真实 HTTP 服务器**(临时端口+临时 DB)做端到端检查、重启持久化、SQLite 魔数、隐藏输入 |
+| T6 devteam | `tasks/benchmark/devteam/` | 4 | 空 | **协同开发工具**(CLI + HTML 仪表盘):项目/成员/角色权限 → 迷你 VCS + 协作署名 → 日程+UI(status/`--output-json`/dashboard 自包含 HTML) → 质量检查+自动补全+**viewer 权限反转**;考察**长上下文**(复杂真实应用)、**主动澄清**(terse brief → agent 提问 → user 据 user_knowledge 回答)、**需求变更**、**长期记忆 + 遗忘被推翻规则**(权限反转双轴);配套**真人扮演用户模式**(`USER_SIMULATOR=manual`) |
 
 - **每任务均本地验证**:参考解法 → 全轮 1 / reward=1;判别器(只做部分轮次)→ reward=0(§5)。T3 判别器演示了 **round_1=1, round_2=0, round_3=1 → reward=0**(跳过中间里程碑也被乘积捕获)。
 - **ground-truth/user_intent 一致性**(§6.4 教训)已贯彻:格式/约束细节(如 todos.json 位置、JSON 永远数组、console 入口名、pipeline 分组列)同时写进 `requirement` 与 `user_intent`。
@@ -151,11 +154,18 @@ count=5 mean=3.0 min=1.0 max=5.0
 | T2 repofix(本地,无容器) | ✅ 参考解法 → **round_1,2,3=1,reward=1**;**未修复的种子仓库 → 全 0**;**只做 R3 判别器(改可见测试作弊)→ 全 0(隐藏检查兜住)**;scorer 单测 7/7 |
 | T3 pkg-wordcount(本地,无容器) | ✅ 参考解法 → **round_1,2,3=1,reward=1**;**判别器(跳过 top_words/R2)→ round_1=1, round_2=0, round_3=1,reward=0**(乘积捕获"跳过中间里程碑");scorer 单测 5/5 |
 | 3 个新任务 Harbor 预检 | ✅ `harbor run -p <task> -e novita --print-config` 全部通过;scenario.json 经 `Scenario` 模型解析 OK |
-| 单测总计 | ✅ **66/66**(A+ 36 + B 10 + todo 8 + repofix 7 + pkg 5) |
+| 澄清子循环(框架新能力)单测 | ✅ 82 项(A+ 36 + B 10 + todo 8 + repofix 7 + pkg 5 + 澄清 16);含 stay-on-milestone / 预算耗尽→纠正 / 强制推进重置 / 解析 action |
+| T4 support-bot(本地,无容器) | ✅ 参考解法 → **round_1..4=1,reward=1**;部分实现判别器(只做 KB+订单,停在中途)→ **round_1,2=1,round_3,4=0,reward=0**;Harbor 预检 OK;scenario 经 `Scenario` 模型解析 OK;scorer 单测 10/10 |
+| T5 ticket-system(本地,无容器) | ✅ 参考解法 → **round_1..4=1,reward=1**;部分实现判别器(只做 CRUD+工作流,单脚本 JSON,无包/SQLite/SLA/软删除/统计)→ **round_1,2=1,round_3,4=0,reward=0**;Harbor 预检 OK;scenario 经 `Scenario` 模型解析 OK;scorer 单测 11/11 |
+| T6 devteam(本地,无容器) | ✅ 参考解法 → **round_1..4=1,reward=1**;判别器(仅 M1+M2,viewer 仍只读、无 M3/M4)→ **round_1=1,round_2=1,round_3=0,round_4=0,reward=0**;Harbor 预检 OK;scenario 经 `Scenario` 模型解析 OK;devteam scorer 单测 6/6 + manual_user 7/7 |
+| 单测总计 | ✅ **116/116**(框架 89 含 manual_user 7 + support-bot scorer 10 + ticket-system scorer 11 + devteam scorer 6) |
 | 端到端 todo-tracker #1(07:26) | ⚠️ **round_1..4=0,reward=0** —— 交互链路完美(4 轮全 satisfied、agent 实现全部正确),但 verifier 因 **scorer 候选入口 bug** 全判 0(§6.9)。已修 scorer |
 | 端到端 todo-tracker #2(07:50,已修 scorer) | ✅ **round_1,2,3,4=1,reward=1**。首个非 demo 任务的完整 e2e:4 轮全 satisfied、无纠正轮;user-LLM 消息忠实(引用实际行为:JSON 数组、[done] 后缀、priority 默认、report 三行含 0、search 大小写不敏感)且 **判定与 verifier 完全一致**(judge-vs-scorer 分歧=0) |
+| 端到端 devteam #1(15:31) | ❌ **AgentTimeoutError,无 reward** —— 交互正常推进到第 6 轮(M4 进行中),撞上 **Novita 沙箱 1h 自动销毁**(`_SANDBOX_TIMEOUT_SEC=3600`),agent 读 `/logs/agent/claude-code.txt` 时沙箱已删 → 整轮 errored;transcript 未同步(§6.10) |
+| 端到端 devteam #2(16:36,长沙箱插件) | ✅ **round_1,2,3,4=1,reward=1**,0 异常,54m 9s。`--plugin benchmark.debug_long_sandbox_plugin:LongSandboxPlugin` 把沙箱上限提到 2h。5 轮 agent + 1 次澄清(M4),judge-vs-scorer 分歧=0。观察:①**user 反馈真实且锚定实际行为**("权限拦截都好使/回滚完文件内容对/测试 38 条全绿";M4 澄清精确划定反转范围:commit/rollback 全员、event 维持、check 只扫 .py);②**agent 在引导下完成全部里程碑**:M1 轮超量交付(M1+M2+21 测试),M4 主动反问(澄清子循环)后正确执行 **viewer 权限反转**(commit/rollback 改全员 = 遗忘旧规则)且 M1–M3 全保留(记忆);③**交流轮充足**:M1=1/M2=1/M3=1/M4=2,5/12 轮,无 force-advance;但每轮 ~8-9 分钟 → 1h 沙箱只够 ~6 轮,`max_rounds=12` 实际不可达,需要长沙箱或压紧任务 |
+| devteam 难度硬化(2026-08-12) | 🔧 **最小可用模型 flash 在旧 scorer 下 reward=1 → 任务对"模型对比"分辨率不足**(但判别器仍把"只做部分里程碑"判 0)。已硬化 scorer + 修参考解 + 补 scenario 权限表述:①M4 反转**作用域收紧**——viewer 能 commit/rollback 但 **event add/remove 仍仅 owner/member**(旧参考解漏了 viewer 管日程的拦截,已加 `require_editor`);②`check` **精度**——干净文件零输出、字符串里的 `"TODO"` 不得误报(参考解改 `tokenize` 只认 COMMENT 令牌)、未定义变量需真 AST;③`status` 断言**精确计数**;④边界用例——空项目提交、回滚不存在提交/移除不存在成员/日程报错、非成员读写全拦、unicode+嵌套文件名。本地验证:参考解仍 reward=1、判别器仍 0、**"viewer 可管日程"的偷懒实现 → round_4=0**(旧 scorer 会给 1,证明硬化有效)。run #3(深夜)用**硬化后 scorer + 新 prompt 规则**跑,将给出 flash 是否仍 1 的直接证据 |
 
-run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM)在真实部署下工作;round_2=0 不是 harness bug,是任务规格问题。run #3 证明 **ground-truth 显式化 → user-LLM 忠实转述 → agent 正确实现**的链路成立:把格式/约束细节写进 `requirement`+`user_intent`,Kimi 会原样传达(甚至补充理由),agent 据此实现。run A+ #1/#2 证明 **动态判定 + 工作区证据在真实部署下成立**,且 `satisfied` 判定与 verifier 一致(reward=1)。
+run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM)在真实部署下工作;round_2=0 不是 harness bug,是任务规格问题。run #3 证明 **ground-truth 显式化 → user-LLM 忠实转述 → agent 正确实现**的链路成立:把格式/约束细节写进 `requirement`+`user_intent`,Kimi 会原样传达(甚至补充理由),agent 据此实现。run A+ #1/#2 证明 **动态判定 + 工作区证据在真实部署下成立**,且 `satisfied` 判定与 verifier 一致(reward=1)。devteam #2 进一步证明:**复杂 4 里程碑任务 + 权限反转**在真实部署下 judge-vs-scorer 完全一致;user-LLM 在 M4 澄清轮给出的范围约束(只放开 commit/rollback、event 维持、check 收 .py)正是 verifier 所查的边界。
 
 > 观察(非阻塞):run A+ #2 中 Kimi 给 milestone 3 的 JSON 加了一条 ground-truth 之外的要求("每个对象加 filename 字段")。本任务 scorer 只查数组长度不查条目键,故 reward 不受影响;属 §6.4 已知的"自然指令 vs ground-truth 一致性"风险,后续任务需留意。
 
@@ -170,6 +180,7 @@ run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM
 7. **`min_reward` 与纠正轮冲突**:纠正轮在某步天然低分,`min_reward` 门控会提前中止、破坏纠正语义。→ Design B **不设 `min_reward`**,终止由 `TurnController` 控制。
 8. **AGENT_END 钩子时机**:非 mounted 环境在 `AGENT_END` 时当前步 agent 输出**尚未下载到宿主**(`_sync_agent_output` 在步末才执行)。→ 可靠读点在**归档后**(自定义 trial 的 `_after_step`,`_archive_step_outputs` 同步执行)或 `VERIFICATION_START`。
 9. **scorer 候选入口发现必须跳过"文件不存在"**:todo-tracker e2e(07:26)agent 把实现写在 `/workspace/todo.py`(合法),但 scorer 候选 1 `python3 src/todo.py` 在**文件缺失时是 rc=2 的 CompletedProcess**(python 报 "can't open file"),不是 FileNotFoundError → `run_todo` 把 rc=2 当结果返回、短路了真正的 `/workspace/todo.py` → verifier 全 0(而 user-LLM 判定全 satisfied,agent 实现本身完全正确)。demo 的 `run_stats` 靠 `rc==0 and stdout` 门槛躲过;todo scorer 改为**先 `os.path.exists(cmd[-1])` 跳过不存在入口**。**教训**:多候选入口的 scorer 必须显式跳过缺失文件,或要求 rc==0+非空 stdout 才接受候选。
+10. **Novita 沙箱 1h 自动销毁 + 可观测性**(devteam e2e,2026-08-11):沙箱寿命是安装包硬编码 `NovitaEnvironment._SANDBOX_TIMEOUT_SEC = 3600`(novita.py:693),在 `_create_sandbox` 时作 `timeout=` 传给 novita_sandbox SDK;**task.toml `[environment]` 没有沙箱寿命字段**(只有 `build_timeout_sec` 模板构建),也不读环境变量。devteam #1 在第 6 轮撞上限 → 沙箱被删 → agent 的 `_read_agent_output` exec 抛 `TimeoutException: The sandbox was not found` → 整 trial errored,**无 verifier、transcript 未同步**。**对策**:①观察跑用 `--plugin benchmark.debug_long_sandbox_plugin:LongSandboxPlugin`(`on_job_start` 改类属性;值取 `NOVITA_SANDBOX_TIMEOUT`,默认 2h;计费按实际时长不是上限);②`interactive_agent.py` 增加**每轮 `[decision]` 日志 + 增量写 transcript**,半途死也能复盘;③**harbor CLI 进程要能 import `benchmark`**:`PYTHONPATH=/ssd/xueshenye/proj`(缺了报 `No module named 'benchmark'`,trial 起不来)。**教训**:每轮 ~8-9 分钟(claude --print + 快照 + user-LLM)下,1h 沙箱只够 ~6 轮,复杂任务要么压紧轮次、要么提供可配置沙箱寿命。
 
 ## 7. 未完成工作
 
@@ -182,12 +193,19 @@ run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM
 - [x] **真实端到端验证"只完成最后一轮"判别器**:`benchmark/last_only_agent.py`(确定性"只做最后里程碑"agent)→ Novita run(03:40)**round_1=0,round_2=0,round_3=1 → reward=0**,判别器在真实部署下有效
 - [x] **Design B(原生 multi-step)实现 + Novita 端到端验证**:`benchmark/{step_driver,multi_step_trial,interactive_step_agent,design_b_plugin}.py` + 多步任务 `tasks/benchmark/multi-round-cli-demo-multistep/`(6 预建步、共享根 tests、`multi_step_reward_strategy="final"`、无 min_reward)。单测 46/46(A+ 36 + StepDriver 6 + step-agent 4);Novita run(04:17)**reward=1**(提前终止、per-step 稠密诊断、每步轨迹);判别器 run(04:48,LastOnlyClaude)**reward=0** + 纠正轮真实触发。**纯增量、可回退**(A+ 零改动)
 - [x] **任务套件 T1–T3(文献调研 + 实现 + 本地验证)**:`docs/task-suite-design.md`(调研 SWE-Interact/SWE-Together/τ-bench/EvoCode-Bench 等 → 能力分类 → 任务规格);实现 `tasks/benchmark/{todo-tracker,repofix,pkg-wordcount}/`(scenario+instruction+Dockerfile+scorer+solve.sh+test.sh)。本地验证:全参考解 → reward=1,判别器 → reward=0,单测 66/66(新增 20),Harbor 预检通过。**端到端 Novita 运行待跑**(见 §8)
+- [x] **澄清子循环(agent 提问 → user 回答)框架能力**:`Milestone.user_knowledge` / `Scenario.max_clarifications`;`TurnDecision.action`(judge/answer);`TurnController` 澄清分支(留在同里程碑、不消耗纠正、不推进;超预算降级为纠正);prompt 澄清规则 + user_knowledge 注入 + 软性"以客户身份实测"提示;`decisions[]` 记录 `action`;单测 66→82
+- [x] **T4 support-bot(客服机器人,实现 + 本地验证)**:4 里程碑(知识库问答 → 订单 API → 包重构+批量 → 多语言+转人工);`seed/`(用户材料)+ `ground_truth/`(仅 verifier,含隐藏 `facts.json`);合成订单由 verifier 运行时生成(防硬编码/防篡改);参考解法 reward=1、部分实现判别器(`benchmark/partial_support_bot.py:FirstTwoClaude`,只做 KB+订单)→ reward=0
+- [x] **T5 ticket-system(产品开发类任务,实现 + 本地验证)**:内部工单系统 HTTP 服务,4 里程碑(CRUD → 工作流/搜索/筛选 → 包重构+SQLite+SLA → **软删除反转**+统计);`api.md` 作为 **v1 契约把删除固定为永久**,软删除/恢复由 M4 引入 → 反转真实而非"补端点";verifier 起真实服务器(临时端口 + 临时 `TICKET_DB`)做端到端 HTTP 检查、重启持久化、SQLite 魔数、隐藏输入、docs 防篡改;参考解法 reward=1、判别器(`benchmark/partial_ticket_system.py:PartialTicketClaude`,只做 CRUD+工作流)→ reward=0。依据:两份调研(基准任务类型 + 真实 vibecoding 体验),设计为"零到一产品构建、真实用户面(HTTP)、真实数据层、需求反转、agent 必须跑起产品"
+- [x] **T6 devteam(协同开发工具,实现 + 本地验证)**:把真实产品草稿 `task_1.txt` 落成 headless 可验证任务。4 里程碑(项目/成员/角色 → 迷你 VCS+协作署名 → 日程+UI:status/`--output-json`/dashboard 自包含 HTML → 质量检查+自动补全+**viewer 权限反转**);CLI + HTML 仪表盘,无 seed/ground_truth,测试输入在 scorer 内 seeded-RNG 即时生成;参考解 reward=1、判别器(`benchmark/partial_devteam.py:PartialDevteamClaude`,仅 M1+M2、viewer 仍只读)→ reward=0。**新增真人扮演用户模式**:`benchmark/manual_user.py`(`USER_SIMULATOR=manual` 换入,打印里程碑需求+评价标准+agent 输出,人手输 s/c/a 简写或严格 JSON 判定),任务作者可亲手跑 demo 给改进意见
+- [x] **T6 devteam 端到端 Novita 运行**:见 §5。run #1(15:31)撞沙箱 1h 上限 errored(§6.10);run #2(16:36,长沙箱插件)**reward=1、judge-vs-scorer 分歧=0**——观察结论:user 反馈真实锚定实际行为、agent 在引导下完成全部里程碑含 M4 权限反转、交流轮 5/12 充足但每轮 ~8-9 分钟使 1h 沙箱只够 ~6 轮(需长沙箱或压紧任务)。真人扮演模式(`USER_SIMULATOR=manual`)仍可用于任务作者亲手走一遍
+- [ ] **T5 端到端 Novita 运行**:跑 1-2 次,观察 M1 澄清轮、agent 开发期自己起服务、M4 删除反转的 user-LLM 转述与 verifier 评分是否一致(judge-vs-scorer 分歧)
+- [ ] **T4 端到端 Novita 运行**:跑 1-2 次,观察澄清轮真实触发(`decisions[].action=="answer"`)、user-LLM 对 M4"语言跟随客户"规则翻转的转述质量、judge-vs-scorer 分歧
 
 ## 8. 未来计划(含 A+ 后改进)
 
 ## 8. 未来计划(含 A+ 后改进)
 
-**短期(当前轮)**:Design A+ 与 Design B **均已实现并经 Novita 端到端验证**;任务套件 **T1–T3 已实现并本地验证**(todo-tracker / repofix / pkg-wordcount,见 §4.1)。**下一步**:为 T1–T3 各跑 1-2 次 Novita 端到端(需 `.env` 凭证,按量计费;命令见 §9),重点观察:
+**短期(当前轮)**:Design A+ 与 Design B **均已实现并经 Novita 端到端验证**;任务套件 **T1–T6 已实现并本地验证**(todo-tracker / repofix / pkg-wordcount / support-bot / ticket-system / **devteam**,见 §4.1)。**新能力**:①澄清子循环(agent 主动提问 → user-LLM 据 `user_knowledge` 回答,不消耗纠正、不推进,超 `max_clarifications` 降级为纠正)——为 T4/T5/T6 这类"模糊起步、agent 必须澄清"的任务铺路;②**真人扮演用户模式**(`benchmark/manual_user.py`,`USER_SIMULATOR=manual` 换入:打印里程碑需求+评价标准+agent 输出+工作区 diff,人手输 s/c/a 简写或严格 JSON 判定),任务作者可不依赖 user-LLM 亲手跑 demo、读本地验收文档判断达标、给改进意见。**T5 ticket-system** 是按调研结论设计的**产品开发类任务**(内部工单系统 HTTP 服务:零到一构建 + 真实数据层 + 状态机工作流 + 需求反转 + verifier 起真实服务器端到端检查);**T6 devteam** 把真实产品草稿 `task_1.txt`(协同开发工具)落成 headless 可验证任务(CLI + HTML 仪表盘,4 里程碑,含权限反转 + 澄清)。**下一步**:为 T1–T6 各跑 1-2 次 Novita 端到端(需 `.env` 凭证,按量计费;命令见 §9),重点观察:
 - **user-LLM 判定/转述质量在更复杂任务上是否稳定**(文献警示:τ²-bench 47% 对话含模拟器错误;"Lost in Simulation" ±9pp 用户模型敏感性)——建议跑完记录判定 vs verifier 分歧;
 - repofix(T2)的**调试轮**是否真实触发纠正、pkg(T3)的 `pip install` 在沙箱内是否顺畅;
 - 之后推动 RLVR 落地(reward.json 多键 → VerifierResult.rewards → 训练信号)。
@@ -200,6 +218,8 @@ run #2 证明整条流水线(Design A + Novita + DeepSeek 后端 + Kimi user-LLM
 - ground-truth 设计规范:scorer 检查的每一点都应能从自然指令合理推出;避免"读心"式测试点。
 - 更多任务/轮次;评估"自然、连续、必要"的介入质量。
 - RLVR 落地:reward.json 多键 → VerifierResult.rewards → 训练信号。
+
+**多模型评估(2026-08-12 新增)**:`benchmark/run_model_compare.sh` —— 固定 user-LLM(.env 的 kimi-k3)、只变 **agent 模型**(DeepSeek + Novita 双后端),逐模型输出 reward/逐轮/agent 轮数/澄清/纠正/force-advance/判分分歧/时长/费用。**关键发现**:①DeepSeek Anthropic 端点只有 `deepseek-v4-flash`/`deepseek-v4-pro` 两个 distinct 模型,**`claude-sonnet-5` 被静默别名成 flash**(探测证实,勿当第 3 个);②Novita 提供 Anthropic 兼容端点(`https://api.novita.ai/anthropic/v1/messages`)可作 agent 后端,但**并非所有模型支持 anthropic**(已验支持:kimi-k2.5/kimi-k3/glm-5.2/deepseek-v4-flash;不支持:ling-3.0-tiny/gemma-4-26b/qwen3.5-27b/glm-4.5-air/glm-4.7-flash/deepseek-v3-turbo);③默认 grid = flash + glm-5.2 + kimi-k3 + **kimi-k2.5(弱模型,探难度下界)**。**user 体验增强**:prompt_templates 规则 7 强化——user-LLM 要"真的上手跑过"agent 做的东西,并在合适时机**至少给一条**关于 UI/易用性、编码流畅度、功能完整度的改进建议(口语化期望,verifier 不查、不判 false),模拟真实用户反馈。
 
 ## 9. 常用命令
 
@@ -231,7 +251,8 @@ $H run -e novita --env-file .env -p tasks/benchmark/<todo-tracker|repofix|pkg-wo
 - 章程/框架参考:`CLAUDE.md`
 - 用户手册:`README.md`
 - 任务套件设计(文献调研 + 能力分类 + 任务规格):`docs/task-suite-design.md`
+- T6 devteam 任务设计/验收文档(本地测试文档:里程碑需求 + verifier 评价标准 + 手动判断要点 + 真人扮演模式用法):`docs/task-devteam.md`
 - 运行凭证模板:`.env.example`(真实 `.env` 已 git-ignore)
-- 框架代码:`benchmark/`(A+:interactive_agent/controller/user_simulator/scenario/prompt_templates/last_only_agent;B:step_driver/multi_step_trial/interactive_step_agent/design_b_plugin)
-- 任务(4 个):`tasks/benchmark/multi-round-cli-demo/`(基线 stats)、`todo-tracker/`(T1 持久化 CLI)、`repofix/`(T2 调试+边界+回归,`seed/` 预置坏仓库)、`pkg-wordcount/`(T3 包+pytest+入口);多步变体 `multi-round-cli-demo-multistep/`(Design B);单测:`tests/`(含每个新任务的 scorer 一致性测试)
+- 框架代码:`benchmark/`(A+:interactive_agent/controller/user_simulator/scenario/prompt_templates/last_only_agent/partial_support_bot/partial_ticket_system/partial_devteam;**manual_user 真人扮演模式**;B:step_driver/multi_step_trial/interactive_step_agent/design_b_plugin;**debug_long_sandbox_plugin 长沙箱观察插件**,`NOVITA_SANDBOX_TIMEOUT` 可配,见 §6.10)
+- 任务(7 个):`tasks/benchmark/multi-round-cli-demo/`(基线 stats)、`todo-tracker/`(T1 持久化 CLI)、`repofix/`(T2 调试+边界+回归,`seed/` 预置坏仓库)、`pkg-wordcount/`(T3 包+pytest+入口)、`support-bot/`(T4 客服机器人)、`ticket-system/`(T5 产品开发:内部工单系统 HTTP 服务,`seed/` 预置业务文档+接口契约,`ground_truth/` 仅 verifier)、`devteam/`(T6 协同开发工具:CLI+HTML 仪表盘,无 seed/ground_truth,scorer 内即时生成输入);多步变体 `multi-round-cli-demo-multistep/`(Design B);单测:`tests/`(含每个新任务的 scorer 一致性测试)
 - 端到端 job 结果:`jobs/<timestamp>/`(result.json / agent/ / verifier/;Design B 另含 `steps/*/{agent,verifier}/` per-step 轨迹与 reward)

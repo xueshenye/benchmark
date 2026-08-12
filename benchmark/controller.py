@@ -2,6 +2,10 @@
 
 Decides, after each agent round, what the simulated user does next:
 
+- ``action == "answer"`` (clarification sub-loop) within the per-milestone
+  clarification budget → the user answers the agent's questions; the message
+  becomes the next instruction on the SAME milestone (no correction consumed,
+  no advance). Past the budget such a round degrades into a normal correction.
 - ``satisfied`` → advance to the next milestone (the decision's message is the
   next milestone's request).
 - ``unsatisfied`` within the per-milestone correction budget → repeat the
@@ -29,6 +33,7 @@ class TurnController:
         self.simulator = simulator
         self.milestone_ptr = 0  # 0-based index into scenario.milestones
         self.correction_count = 0
+        self.clarification_count = 0  # answer rounds used on the current milestone
         self.round_count = 0  # user messages issued to the agent
         # Per-turn decisions, for the transcript artifact / RLVR diagnostics.
         self.decisions: list[dict] = []
@@ -91,16 +96,27 @@ class TurnController:
             current, nxt, agent_output, workspace_evidence=workspace_evidence
         )
         forced = False
-        if decision.satisfied:
+        if decision.action == "answer" and self.clarification_count < self.scenario.max_clarifications:
+            # Clarification sub-loop: the agent's output was primarily questions;
+            # the user answers them. Stays on the SAME milestone, consumes a round
+            # but NOT a correction, does NOT advance. The answer is the next
+            # instruction.
+            self.clarification_count += 1
+            message = decision.message
+        elif decision.satisfied:
             self.milestone_ptr += 1
             self.correction_count = 0
+            self.clarification_count = 0
             message = decision.message
         else:
+            # Over-clarification (action="answer" past the budget) degrades into a
+            # normal correction: the message is still delivered as feedback.
             self.correction_count += 1
             if self.correction_count > self.scenario.max_corrections:
                 forced = True
                 self.milestone_ptr += 1
                 self.correction_count = 0
+                self.clarification_count = 0
                 new_current = self.current_milestone  # post-advance = milestone to re-request
                 message = (
                     await self.simulator.render_milestone(
@@ -118,7 +134,9 @@ class TurnController:
             {
                 "round": self.round_count,
                 "milestone_index": current.index,
+                "action": decision.action,
                 "satisfied": decision.satisfied,
+                "clarification_count": self.clarification_count,
                 "forced_advance": forced,
                 "message": message,
                 "workspace_evidence": workspace_evidence,

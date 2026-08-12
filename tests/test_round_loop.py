@@ -149,6 +149,42 @@ def test_correction_round_inserted_when_unsatisfied(tmp_path, monkeypatch) -> No
     assert decisions[1]["milestone_index"] == 1  # same milestone, accepted on the next judge
 
 
+def test_clarification_round_does_not_advance(tmp_path, monkeypatch) -> None:
+    """An action=answer round (agent asks → user answers) stays on the SAME milestone."""
+    script = [
+        {"action": "answer", "message": "知识库在 /workspace/knowledge_base"},
+        {"satisfied": True, "message": "user message for round 3"},
+        {"satisfied": True, "message": "user message for round 4"},
+        {"satisfied": True, "message": "thanks, all done"},  # closing judgement for milestone 3
+    ]
+    user_llm_calls: list[str] = []
+
+    async def fake_user_llm(prompt: str) -> str:
+        user_llm_calls.append(prompt)
+        return json.dumps(script[len(user_llm_calls) - 1])
+
+    run_instructions, context = _run_loop(tmp_path, monkeypatch, fake_user_llm=fake_user_llm)
+
+    # The user's answer becomes the round-2 instruction; the milestone does not advance.
+    assert run_instructions == [
+        "INITIAL TASK",
+        "知识库在 /workspace/knowledge_base",
+        "user message for round 3",
+        "user message for round 4",
+    ]
+    assert len(user_llm_calls) == 4  # answer, advance m1, advance m2, closing
+
+    artifact = json.loads((tmp_path / "interactive_transcript.json").read_text())
+    decisions = artifact["decisions"]
+    assert decisions[0]["action"] == "answer"
+    assert decisions[0]["milestone_index"] == 1
+    assert decisions[0]["satisfied"] is False
+    assert decisions[1]["milestone_index"] == 1  # still milestone 1 when it finally advances
+    assert artifact["num_clarifications"] == 1
+    assert context.metadata["num_clarifications"] == 1
+    assert context.metadata["max_clarifications"] == 2
+
+
 def test_max_rounds_cap_bounds_the_loop(tmp_path, monkeypatch) -> None:
     """max_rounds=3 with a persistently-unsatisfied user stops after exactly 3 runs."""
     user_llm_calls: list[str] = []

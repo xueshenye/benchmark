@@ -54,7 +54,7 @@
 | 6 | 回归避免 / 向后兼容 | **reward=乘积 的直接判据**;破坏第 1 轮而完成第 3 轮 = 0 | 扩展 CLI/库但保留旧 flag、PASS_TO_PASS vs FAIL_TO_PASS | 全部(核心) |
 | 7 | 多文件重构 / 接口变更 | 改数据/接口并同步所有调用点;跨文件一致性 | RefactorBench、签名变更 + 全仓替换 | repofix R3(重构)、todo(可选) |
 | 8 | 测试行为 / 自我验证 | agent 自己的测试是回归避免的机制;verifier 必须防"建到测试" | 每轮后自跑测试(agent-verify)、SWE-AGI public/private 测试拆分 | repofix R3、pkg R2 |
-| 9 | 与用户沟通 / 澄清 | agent 选择"问"vs"假设"可评分;模糊轮次是旋钮 | Ambig-SWE(交互提升 +74%)、underspecified 任务 | 任务间设定不同的模糊度 |
+| 9 | 与用户沟通 / 澄清 | agent 选择"问"vs"假设"可评分;模糊轮次是旋钮 | Ambig-SWE(交互提升 +74%)、underspecified 任务 | **T4 support-bot / T5 ticket-system**(澄清子循环:agent 提问 → user 据 `user_knowledge` 回答,不消耗纠正、不推进) |
 | 10 | 非纯编码技能 | DB、shell、文件、数据 | InterCode-SQL、terminal-bench sanitize-git-repo | todo(状态持久化)、repofix(数据) |
 
 ### 2.3 累计里程碑设计教训
@@ -86,7 +86,7 @@
 
 ## 3. 任务套件总览(复杂度阶梯)
 
-四个任务构成从易到难的阶梯,覆盖 §2.2 的 10 个能力维度。**工作区起点**、**状态性**、**工具链**、**模糊度**逐级加深。
+六个任务构成从易到难的阶梯,覆盖 §2.2 的 10 个能力维度。**工作区起点**、**状态性**、**工具链**、**模糊度**逐级加深。
 
 | 任务 | 目录 | 轮次/里程碑 | 工作区起点 | 考察重点 | 复杂度 |
 |---|---|---|---|---|---|
@@ -94,6 +94,8 @@
 | **T1 todo** | `tasks/benchmark/todo-tracker/` | 4 | 空 | 状态持久化、数据建模、过滤/统计、回归、跨进程一致性 | ★★ |
 | **T2 repofix** | `tasks/benchmark/repofix/` | 3 | **预置坏仓库 + 测试** | 调试、边缘用例、自我验证、重构、回归测试 | ★★★ |
 | **T3 pkg** | `tasks/benchmark/pkg-wordcount/` | 3 | 空 | 真实生态(git/pip/pytest)、包结构、CLI 入口、自测 | ★★★ |
+| **T4 support-bot** | `tasks/benchmark/support-bot/` | 4 | **预置知识库 + 订单 API mock + docs** | 客服机器人:知识库问答、订单 API 集成、包重构+批量、多语言+转人工;**长上下文/真实应用、主动澄清、需求变更与大幅重构、长期记忆 + 遗忘被推翻规则** | ★★★★ |
+| **T5 ticket-system** | `tasks/benchmark/ticket-system/` | 4 | **预置业务文档 + 接口契约 + 样例导出** | **产品开发类**(内部工单系统 HTTP 服务):CRUD → 工作流/搜索/筛选 → 包重构+SQLite+SLA → **软删除反转**+统计;**零到一产品构建、真实用户面(HTTP)、真实数据层、verifier 起真实服务器端到端检查、需求反转** | ★★★★★ |
 
 > 命名:tasks 用 `todo-tracker` / `repofix` / `pkg-wordcount`(Harbor `task init` 需要 `<org>/<name>`;本项目沿用 `benchmark/<name>` 的本地目录约定,见 `tasks/benchmark/`)。
 
@@ -149,16 +151,71 @@
 
 **scorer 要点**:verifier 在容器内 `pip install -e /workspace --quiet` 后跑 `python3 -c "import wordcount"` 与 CLI,并 `python3 -m pytest -q` 检查退出码;同时用隐藏输入直接断言 `count`/`top_words` 行为(防"只写测试"型作弊)。
 
-### 4.4 复杂度阶梯对照
+### 4.4 T4 support-bot(客服机器人:长上下文 + 澄清 + 重构 + 长期记忆)
 
-| 维度 | T0 stats | T1 todo | T2 repofix | T3 pkg |
-|---|---|---|---|---|
-| 起点 | 空 | 空 | **既有坏代码** | 空 |
-| 状态性 | 无(每调用独立) | **跨进程持久化** | 有(输入数据) | 有(安装状态) |
-| 工具链 | stdlib 脚本 | stdlib 脚本 | stdlib 脚本 | **pip/pytest/安装** |
-| 每轮新增能力 | 加 flag | 加 flag+持久化语义 | 调试→边界→重构 | 结构→测试→入口 |
-| 边界/鲁棒性 | 文件缺失 | 空数据 | **重点** | 词频大小写/标点 |
-| 自我验证 | 弱 | 弱 | **强(pytest)** | **强(pytest)** |
+**形态**:空工作区,但预置了"用户提供的材料"——`knowledge_base/`(商品/政策/售后)、`docs/api.md`(内部订单接口规格)、`mock_api/`(订单接口的本地模拟服务)。agent 构建一个**真实可用的客服机器人**,跨 4 个里程碑演进。这是套件中**最复杂、最贴近真实场景**的任务,四个考察目标:
+
+1. **长上下文/长程**:机器人是一个有实际意义的应用(知识库检索 + HTTP API 集成 + 批量 + 多语言),每个里程碑工作量都大,workspace 持续增长,agent 每轮都要从环境重建上下文。
+2. **准确理解需求 / 主动澄清**:round-1 `instruction.md` 刻意**简略模糊**(能力 #2);agent 必须主动提问(知识库在哪?用什么实现?语言?答不上来怎么办?),user 通过**澄清子循环**(框架新能力)回答——`user_knowledge` 里的信息只在 agent 问起时揭示。
+3. **灵活应对需求变更**:M2 追加订单查询(引入 HTTP API,agent 需发现/询问接口);M3 **大幅重构**(单脚本 → 可导入包 + 批量模式 + pytest);M4 细节修改 + 规则变更(多语言)。
+4. **长期记忆 + 遗忘被推翻指令**:M4 **推翻了 M1 的"始终中文"规则**(改为"跟随客户语言"),scorer 同时要求英文问题→英文回答、中文问题→中文回答(双重约束逼 agent 既保留 M1 的上下文又更新规则);未知问题 → 转人工 + 写 `escalations.log`(旧"无法回答"兜底被取代)。verifier 对最终状态跑全部 4 个里程碑检查(累计回归 + 乘积 reward),所以"忘了 M1"或"没忘旧规则"都会被捕获。
+
+**里程碑**:
+- **R1 `kb_bot`**:CLI `support-bot "<问题>"` 基于知识库用中文回答;查不到 → 礼貌兜底,不编造。
+- **R2 `api_orders`**:订单数据只在内部 API(不进入知识库),`SUPPORT_API_BASE`(默认 `http://localhost:8123`)配置地址;查订单真实调 API 并把状态译成中文;404 → 礼貌告知。
+- **R3 `batch_refactor`**:重构为可导入的 `support_bot` 包 + `--batch q.txt -o a.txt`(逐行、顺序一致)+ pytest 全绿;单问/查订单不变。
+- **R4 `lang_escalate`**:英文问题英文答(取代"始终中文");未知问题 → 转人工话术 + 追加 `escalations.log`;其余功能全保留。
+
+**scorer 要点**:测试输入全部**运行时生成**——从隐藏的 `ground_truth/facts.json`(zh/en 事实)用固定种子随机抽样;订单数据由 verifier 自己的 mock 实例 serve(**合成订单**,agent 无法预知/篡改);知识库必须与 `ground_truth/` **字节一致**(改用户材料 → 该轮 0);`python3 -m pytest -q` 与 `import support_bot` 作 R3 检查;入口发现跳过不存在的候选文件(§6.9 教训)。
+
+### 4.5 T5 ticket-system(产品开发类:零到一产品构建 + 真实数据层 + 需求反转)
+
+**形态**:空工作区,但预置了"用户提供的材料"——`docs/README.md`(业务背景)、`docs/api.md`(**v1 HTTP 接口契约**)、`docs/tickets_export.json`(历史导出样例)。agent **零到一构建一个内部工单系统(HTTP 服务)**,跨 4 个里程碑演进。这是套件中**最贴近真实产品开发**的任务,对应调研结论(见 §1 背景):真实用户面(HTTP 服务器 + 网页)、真实数据层(持久化跨重启,最终 SQLite)、有状态工作流、agent 必须真的跑起产品、verifier 起真实服务器做端到端执行检查(非 LLM-judge、无浏览器自动化)。
+
+1. **零到一 + 模糊起步**:round-1 是口语化的业务简述("客服用 Excel 记工单,乱糟糟的…你看着办"),agent 必须读 `/workspace/docs`(契约)并向 user 澄清业务决策(SLA 阈值、删除策略、是否登录等)——`user_knowledge` 只在被问时揭示。
+2. **需求变更与大幅重构**:M2 加搜索/筛选/指派/严格状态机;M3 **大幅重构**(单脚本 → 可导入包 + SQLite + pytest + SLA/超时逻辑)。
+3. **需求反转 + 长期记忆(M4 核心)**:`api.md` 作为 **v1 契约把 DELETE 固定为永久删除**(且不含 `deleted`/`restore`/`include_deleted`)→ M4 **推翻该指令**:改为软删除 + 恢复接口 + 统计。verifier 对最终状态跑全部 4 个里程碑检查,所以"忘了 M1 契约"或"没忘旧删除行为"都会被捕获(硬删除 → 恢复失败 → M4=0)。
+4. **真实执行检查**:verifier 自行启动服务(临时端口 + 临时 `TICKET_DB`),用隐藏输入(seeded 事实)走 HTTP 端到端:创建/列表/详情/过滤/状态流转/删除/软删除/恢复/统计/重启持久化/SQLite 魔数/页面存在性;`docs/` 必须与 `ground_truth/` 字节一致。
+
+**里程碑**:
+- **R1 `ticket_crud`**:按 api.md 实现服务:健康检查、创建(400 空 title、默认 medium、可选 created_at 回填)、列表、详情、**持久化跨重启**、网页(`云服客服` + 工单区域)。
+- **R2 `ticket_workflow`**:q/status/priority/assignee 过滤、指派、严格状态机(逐级 + 重开,跳级 400)、硬删除(删后不在列表)。
+- **R3 `ticket_refactor_sla`**:可导入包 `ticket_system/` + **SQLite** + pytest 全绿 + `overdue` 超时逻辑(列表/详情返回)。
+- **R4 `ticket_softdelete_report`**:删除策略反转(软删除 + `deleted` 字段 + `restore` + `include_deleted=1`)+ 统计接口(by_status/by_priority/avg_resolution_hours/overdue_count)。
+
+**scorer 要点**:`_start_app` 起真实服务并轮询 `/api/health`;`_stop_app` killpg 清理;临时端口 + 临时 DB 隔离 agent 遗留服务/数据;M1 重启持久化、M3 SQLite 魔数、M4 软删除正反断言 + 删除状态跨重启保持;入口发现跳过不存在的候选文件(§6.9);防篡改:docs 字节一致。
+
+### 4.6 T6 devteam(协同开发工具:CLI + HTML 仪表盘;长上下文 + 澄清 + 需求变更 + 权限反转)
+
+**形态**:空工作区(无预置材料、无 `ground_truth/` —— 测试输入全部在 scorer 内用 seeded-RNG 即时生成)。agent 构建一个**团队协同开发命令行工具** `devteam`(项目/成员/角色 + 迷你 VCS + 日程/概览/HTML 仪表盘 + 质量检查/自动补全),跨 4 个里程碑演进。这是把真实产品草稿(task_1.txt:协同开发工具)落成 headless 可验证任务的一次界定:
+- "轻量化IDE"重新界定为**由命令管理的代码工作区**(`projects/<项目>/code/`)+ commit/rollback/history/file-history;
+- "用户界面优化"重新界定为 `status` 概览 + 列表命令 `--output-json` + `dashboard <项目>` 生成**自包含 HTML 概览页**(verifier 校验页面文件内容)。
+
+四个考察目标:
+1. **长上下文/长程**:工具是有实际意义的应用(多命令 CLI + JSON 状态 + 磁盘快照 + HTML 生成 + ast 代码分析),workspace 跨里程碑持续增长,每轮只给"模拟用户那一条自然消息",agent 必须从环境 + 消息重建上下文。
+2. **准确理解需求 / 主动澄清**:round-1 `instruction.md` 刻意**简略**(只说要建项目/管成员/权限/版本控制,细节全不写);agent 必须主动问(命令怎么命名?数据存哪?角色怎么分?权限规则?),user 通过**澄清子循环**回答(`user_knowledge` 只在被问时揭示)。问得不够 → 按错误假设实现 → verifier 判 0。
+3. **灵活应对需求变更**:M2 追加迷你 VCS(commit/rollback/history/file-history,协作署名);M3 追加日程 + UI 优化(概览/JSON/HTML);M4 追加质量检查 + 自动补全。每次都是大特性追加,旧命令必须不坏(回归)。
+4. **长期记忆 + 遗忘被推翻指令(M4 核心)**:M1 定权限规则("viewer 只读,不能提交";非成员禁入;仅 owner 管成员);M4 **推翻 viewer 只读**("viewer 也能提交,所有成员都可提交")。scorer 对最终状态跑全部 4 个里程碑检查:**M1/M2 的检查只测 owner/member 的权限(不测 viewer 只读),给 M4 反转留空间**;M4 检查专门断言 viewer 能提交 —— agent 若还在执行 M1 的"viewer 只读"→ M4=0;若丢了 M1 的成员管理/非成员禁入 → M1 检查仍判 0。双轴同时捕获"记住 M1"与"遗忘旧规则"。
+
+**里程碑**:
+- **R1 `devteam_org`**:`devteam project create/list/remove`、`member add/remove/list --project --role owner|member|viewer`;数据持久化到当前目录 `devteam.json`;操作者 = `DEVTEAM_USER`(默认 root 超管);权限规则(非成员禁入、仅 owner 管成员、viewer 只读)。
+- **R2 `devteam_vcs`**:代码工作区 `projects/<项目>/code/`(团队直接写文件);`commit -m`(快照 + 署名)、`history`(新到旧)、`rollback`(恢复文件)、`file-history`(按文件看提交)。
+- **R3 `devteam_schedule`**:`event add/list/remove --date`(日程)、`status`(项目概览:项目名/成员数/文件数/提交数/未来 7 天日程)、`dashboard <项目>`(自包含 HTML 到当前目录)、`member list/event list/history` 支持 `--output-json`。
+- **R4 `devteam_quality`**:`check <项目>`(语法错误/未定义变量/TODO,输出 `文件:行号: 问题`)、`autocomplete <项目> <前缀>`(收集项目代码里定义的函数/类/变量名);**权限反转**——viewer 也能提交(取代 M1 的"viewer 只读")。
+
+**scorer 要点**:无 `seed/` 无 `ground_truth/` —— 测试输入全部**运行时生成**:项目/成员名从名字池 seeded-RNG 抽样、日程日期相对 `date.today()` 计算、代码文件(注入语法错误/TODO、生成标识符)由 scorer 现场写入;入口发现跳过不存在的候选文件(§6.9 教训);每轮检查在临时 cwd 里驱动真实 CLI、断言 stdout/退出码/磁盘状态;`reward` = 乘积。
+
+### 4.7 复杂度阶梯对照
+
+| 维度 | T0 stats | T1 todo | T2 repofix | T3 pkg | T4 support-bot | T5 ticket-system | T6 devteam |
+|---|---|---|---|---|---|---|---|
+| 起点 | 空 | 空 | **既有坏代码** | 空 | **预置知识库 + API mock + docs** | **预置业务文档 + 接口契约 + 样例** | 空 |
+| 状态性 | 无(每调用独立) | **跨进程持久化** | 有(输入数据) | 有(安装状态) | 有(多文件应用 + 外部 HTTP API) | **有(HTTP 服务 + 数据层 + 状态机)** | **有(JSON 状态 + 磁盘快照 + 跨进程)** |
+| 工具链 | stdlib 脚本 | stdlib 脚本 | stdlib 脚本 | **pip/pytest/安装** | stdlib + urllib(HTTP API) | **stdlib http.server + sqlite3** | stdlib(含 ast/html) |
+| 每轮新增能力 | 加 flag | 加 flag+持久化语义 | 调试→边界→重构 | 结构→测试→入口 | 问答→API→重构+批量→多语言+转人工 | CRUD→工作流→重构+SQLite+SLA→软删除反转+统计 | 组织→VCS→日程+UI→质量+补全+权限反转 |
+| 边界/鲁棒性 | 文件缺失 | 空数据 | **重点** | 词频大小写/标点 | 未知问题(不编造)、404 订单、多语言 | 400/404/409、状态机跳级、重启持久化、SQLite | 非成员禁入、viewer 权限反转、回滚覆盖、语法错误/TODO |
+| 自我验证 | 弱 | 弱 | **强(pytest)** | **强(pytest)** | **强(pytest)** | **强(pytest)** | 弱(无 pytest 要求) |
+| 澄清/沟通 | 无 | 无 | 无 | 无 | **强(澄清子循环)** | **强(澄清子循环 + 读契约)** | **强(澄清子循环)** |
 
 ## 5. 评测标准与指标
 
@@ -206,6 +263,9 @@
 ## 7. 实现状态
 
 - ✅ **T1 todo-tracker**、**T2 repofix**、**T3 pkg-wordcount** 均已实现(`tasks/benchmark/{todo-tracker,repofix,pkg-wordcount}/`)并**本地验证**:参考解法 → 全轮 1 / reward=1;判别器 → reward=0;Harbor `--print-config` 预检通过;scenario 经 `Scenario` 模型解析 OK;单测 66/66(新增 20)。
+- ✅ **T4 support-bot**(`tasks/benchmark/support-bot/`)+ **澄清子循环框架能力**:已实现并本地验证——参考解法 → 全轮 1 / reward=1;部分实现判别器(`FirstTwoClaude`,只做 KB+订单)→ reward=0;Harbor 预检通过;单测 92/92(框架 82 + support-bot scorer 10)。
+- ✅ **T5 ticket-system**(`tasks/benchmark/ticket-system/`,产品开发类):已实现并本地验证——参考解法 → 全轮 1 / reward=1;判别器(`PartialTicketClaude`,只做 CRUD+工作流,单脚本 JSON)→ round_1,2=1,round_3,4=0 / reward=0;Harbor 预检通过;单测 103/103(框架 82 + support-bot 10 + ticket-system 11)。
+- ⏳ **T4/T5 Novita 端到端**:待跑。重点观察澄清轮真实触发(`decisions[].action=="answer"`)、agent 开发期自己起服务、user-LLM 对需求反转(M4 语言跟随 / M4 软删除)的转述质量、judge-vs-scorer 分歧。
 - ✅ **T1 Novita 端到端(07:26 + 07:50 重跑)**:首跑交互链路完美但 verifier 因 **scorer 候选入口 bug** 全判 0(`python3 src/todo.py` 缺失时 rc=2 短路,见 PROJECT_STATE.md §6.9);修 scorer 后重跑 **round_1..4=1,reward=1**。4 轮全 satisfied、无纠正轮;user-LLM 消息忠实且与 verifier 判定**完全一致**(judge-vs-scorer 分歧=0)。
 - ⏳ **T2/T3 Novita 端到端**:待跑(每个 1-2 次)。重点观察 user-LLM 判定/转述质量在更复杂任务上是否稳定(文献警示 τ²-bench 47% 模拟器错误;Lost in Simulation ±9pp 用户模型敏感性),记录判定 vs verifier 分歧。
 

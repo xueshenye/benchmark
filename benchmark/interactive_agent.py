@@ -43,6 +43,20 @@ MAX_WORKSPACE_EVIDENCE_CHARS = 6000
 MAX_FILE_BYTES = 512 * 1024  # skip files larger than this when snapshotting
 
 
+def _make_simulator(scenario: Scenario, llm):
+    """Build the simulated user for the interactive loop.
+
+    ``USER_SIMULATOR=manual`` swaps in a human-in-the-loop user (a task author
+    plays the user and types each message/judgement by hand); otherwise the
+    default user-LLM-backed ``UserSimulator`` is used.
+    """
+    if os.environ.get("USER_SIMULATOR", "").strip().lower() == "manual":
+        from benchmark.manual_user import ManualUser
+
+        return ManualUser(scenario)
+    return UserSimulator(scenario, llm=llm)
+
+
 class InteractiveUserClaude(ClaudeCode):
     """Wraps claude-code to run an interactive multi-turn session with a simulated user."""
 
@@ -75,7 +89,7 @@ class InteractiveUserClaude(ClaudeCode):
     ) -> None:
         scenario = await self._load_scenario(environment)
 
-        simulator = UserSimulator(scenario, llm=self._user_llm)
+        simulator = _make_simulator(scenario, self._user_llm)
         simulator.start(instruction)
         controller = TurnController(scenario, simulator)
 
@@ -113,6 +127,12 @@ class InteractiveUserClaude(ClaudeCode):
             workspace_evidence = self._workspace_diff(prev_snapshot, cur_snapshot)
             prev_snapshot = cur_snapshot
 
+            # Keep the host-side trial log and transcript artifact fresh every
+            # round, so an interrupted run (e.g. sandbox expiry) still preserves
+            # the interaction for observation.
+            self._log_round_decision(controller)
+            self._write_transcript_artifact(scenario, simulator, agent_outputs, controller)
+
         self._write_transcript_artifact(scenario, simulator, agent_outputs, controller)
 
         if context.metadata is None:
@@ -120,6 +140,10 @@ class InteractiveUserClaude(ClaudeCode):
         context.metadata["num_rounds"] = len(agent_outputs)
         context.metadata["max_rounds"] = scenario.max_rounds
         context.metadata["num_milestones"] = len(scenario.milestones)
+        context.metadata["num_clarifications"] = sum(
+            1 for d in controller.decisions if d.get("action") == "answer"
+        )
+        context.metadata["max_clarifications"] = scenario.max_clarifications
         context.metadata["user_llm_model"] = simulator.model
         context.n_input_tokens = (context.n_input_tokens or 0) + simulator.input_tokens
         context.n_output_tokens = (context.n_output_tokens or 0) + simulator.output_tokens
@@ -230,6 +254,23 @@ class InteractiveUserClaude(ClaudeCode):
                     assistant_parts.append(content)
         return (result_text or "\n".join(assistant_parts)).strip()
 
+    def _log_round_decision(self, controller: TurnController) -> None:
+        """Log the last decision's action/satisfied/message for host-side observation."""
+        if not controller.decisions:
+            return
+        d = controller.decisions[-1]
+        message = (d.get("message") or "").replace("\n", " ")[:400]
+        self.logger.info(
+            "[decision] round=%s milestone=%s action=%s satisfied=%s forced=%s "
+            "user_message=%r",
+            d.get("round"),
+            d.get("milestone_index"),
+            d.get("action"),
+            d.get("satisfied"),
+            d.get("forced_advance"),
+            message,
+        )
+
     def _write_transcript_artifact(
         self,
         scenario: Scenario,
@@ -242,6 +283,10 @@ class InteractiveUserClaude(ClaudeCode):
             "num_rounds": len(agent_outputs),
             "max_rounds": scenario.max_rounds,
             "max_corrections": scenario.max_corrections,
+            "max_clarifications": scenario.max_clarifications,
+            "num_clarifications": sum(
+                1 for d in controller.decisions if d.get("action") == "answer"
+            ),
             "transcript": simulator.transcript,
             "agent_outputs": agent_outputs,
             "decisions": controller.decisions,

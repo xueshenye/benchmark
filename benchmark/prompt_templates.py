@@ -35,6 +35,19 @@ def _evidence_section(workspace_evidence: str) -> str:
     return f"\n【agent 本轮实际改动的工作区文件(diff)】\n{workspace_evidence}\n"
 
 
+def _knowledge_section(milestone: Milestone | None) -> str:
+    """Render the user's own knowledge (ground truth the user may reveal when
+    the agent asks a clarifying question, but must not volunteer). Empty when
+    the milestone has none."""
+    if milestone is None or not milestone.user_knowledge:
+        return ""
+    return (
+        "\n【你作为用户自己掌握的信息(不要主动透露)】"
+        f"\n{milestone.user_knowledge}\n"
+        "(只有当 agent 主动向你提问时,你才把其中相关的部分告诉它;agent 不问就不要说。)\n"
+    )
+
+
 def build_user_message_prompt(
     *,
     persona: str,
@@ -53,7 +66,7 @@ def build_user_message_prompt(
 【进度】这是第 {milestone.index}/{num_milestones} 个里程碑。
 【你本轮想提出的要求(意图)】{milestone.user_intent}
 【要求的方向(ground truth,仅供你把握,不要逐字照抄)】{milestone.requirement}
-
+{_knowledge_section(milestone)}
 【到目前为止的对话】
 {history}
 
@@ -76,17 +89,23 @@ def build_turn_decision_prompt(
     transcript: list[dict[str, str]],
     agent_output: str,
     workspace_evidence: str = "",
+    max_clarifications: int = 2,
 ) -> str:
     """Build the prompt that asks the user-LLM to judge the previous agent output
     against ``current`` and produce the next user message as strict JSON.
 
     The LLM must answer only with::
 
-        {{"satisfied": true|false, "message": "<your natural speech>"}}
+        {{"action": "judge"|"answer", "satisfied": true|false, "message": "<your natural speech>"}}
 
-    ``satisfied=false`` → ``message`` is concrete corrective feedback for the
-    current milestone. ``satisfied=true`` → ``message`` naturally requests the
-    next milestone's ``user_intent`` (or is a closing remark if no next exists).
+    ``action="answer"`` is the clarification sub-loop: when the agent's output
+    is primarily clarifying questions, the user answers them (from its own
+    ``user_knowledge``) instead of judging; the controller keeps the interaction
+    on the SAME milestone without consuming a correction. ``action="judge"``
+    (default) is the normal judgment: ``satisfied=false`` → ``message`` is
+    concrete corrective feedback for the current milestone; ``satisfied=true`` →
+    ``message`` naturally requests the next milestone's ``user_intent`` (or is a
+    closing remark if no next exists).
 
     ``workspace_evidence`` is a diff of the files the agent actually changed, so
     the judge checks real code rather than the agent's self-report.
@@ -106,7 +125,7 @@ def build_turn_decision_prompt(
 【当前阶段】第 {current.index}/{num_milestones} 个里程碑。
 【这个阶段你要求 agent 做到的事(意图)】{current.user_intent}
 【完成标准(ground truth,仅供你判断,不要逐字照抄)】{current.requirement}
-
+{_knowledge_section(current)}
 {next_hint}
 
 【到目前为止的对话】
@@ -119,7 +138,7 @@ def build_turn_decision_prompt(
 
 然后以你的角色说出你这一轮要对 agent 说的话,并严格输出如下 JSON(不要输出其他任何内容):
 
-{{"satisfied": true|false, "message": "<你自然说出的话>"}}
+{{"action": "judge"|"answer", "satisfied": true|false, "message": "<你自然说出的话>"}}
 
 规则:
 1. 只有当前阶段的要求确实满足,才给 true;否则 false。
@@ -127,4 +146,6 @@ def build_turn_decision_prompt(
 3. satisfied=true 且还有下一阶段时,message 应自然、口语化地提出下一阶段的要求;satisfied=true 且没有下一阶段时,message 是自然收尾语。
 4. 像真实用户一样说话,可以提及 agent 最近的做法,但不要复述整段历史。
 5. 提出的要求以【完成标准】和【意图】为准,不要凭空添加其中没有的新字段/新格式/新硬性约束(真实用户不会发明需求);确有必要增加时,要在 message 里给一句理由。
+6. 澄清(新增):如果 agent 最近一轮的输出主要是向你提问(比如问知识库在哪、用什么实现、回答不了怎么办、接口怎么调用等),而你还没把这些告诉它(本阶段已澄清次数 < {max_clarifications}),那么**不要判定、不要推进**——直接以你的角色自然、真实地回答它,一次把 agent 问的都答清楚,并输出 {{"action": "answer", "satisfied": false, "message": "<你的回答>"}}。回答只能透露"你作为用户自己掌握的信息"里有的内容,不要编造。只有当 agent 反复只问不做(已超过 {max_clarifications} 次)时,才停止回答,改输出 {{"action": "judge", "satisfied": false, "message": "<纠正意见,要求它基于合理假设继续实现>"}}。
+7. 像真实用户一样,你是真的"上手用过" agent 做出来的东西的(亲手跑过命令、看过输出、打开过概览/页面),判定要基于实际使用体验,而不是只看它嘴上怎么说。在合适时机(通常是一个里程碑达成时),**自然地给出至少一条关于用户体验的改进建议**——可以针对用户界面/易用性、编码流畅度,或功能完整度(例如"status 需要把日程按日期排个序""请给命令加个 -h 帮助""同事说 autocomplete 能带上函数签名提示"之类)。建议要口语化、像真实用户的期望,基于你实际试用时的真实感受;verifier 不检查它,agent 采纳与否都不影响这一轮是否达标,所以不要因此把 satisfied 判成 false。如果这次对话还没给过任何建议,尽量在合适的时机(通常是某个里程碑达成时)给一条;给过了就不用重复。
 """

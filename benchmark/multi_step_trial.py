@@ -139,6 +139,10 @@ class InteractiveMultiStepTrial(MultiStepTrial):
             "num_rounds": len(self._agent_outputs),
             "max_rounds": self.driver.scenario.max_rounds,
             "max_corrections": self.driver.scenario.max_corrections,
+            "max_clarifications": self.driver.scenario.max_clarifications,
+            "num_clarifications": sum(
+                1 for d in self.driver.controller.decisions if d.get("action") == "answer"
+            ),
             "transcript": self.driver.simulator.transcript,
             "agent_outputs": self._agent_outputs,
             "decisions": self.driver.controller.decisions,

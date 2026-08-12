@@ -54,6 +54,28 @@ def test_negative_max_corrections_rejected() -> None:
         _scenario(3, max_corrections=-1)
 
 
+def test_milestone_user_knowledge_defaults_empty() -> None:
+    m = Milestone(index=1, requirement="r", user_intent="i", test_id="t")
+    assert m.user_knowledge == ""
+
+
+def test_scenario_max_clarifications_defaults_to_two() -> None:
+    assert _scenario(3).max_clarifications == 2
+
+
+def test_scenario_parses_user_knowledge_and_max_clarifications() -> None:
+    milestones = _milestones(1)
+    milestones[0].user_knowledge = "知识库在 /workspace/knowledge_base"
+    s = _scenario(1, milestones=milestones, max_clarifications=4)
+    assert s.max_clarifications == 4
+    assert s.milestones[0].user_knowledge == "知识库在 /workspace/knowledge_base"
+
+
+def test_negative_max_clarifications_rejected() -> None:
+    with pytest.raises(ValueError):
+        _scenario(3, max_clarifications=-1)
+
+
 def test_missing_milestone_raises_key_error() -> None:
     scenario = _scenario(1)
     with pytest.raises(KeyError):

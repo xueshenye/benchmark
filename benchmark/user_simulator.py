@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Awaitable, Callable
+from typing import Awaitable, Callable, Literal
 
 from pydantic import BaseModel
 
@@ -34,17 +34,27 @@ LLMCall = Callable[[str], Awaitable[str]]
 
 
 class TurnDecision(BaseModel):
-    """The user-LLM's structured decision for one turn."""
+    """The user-LLM's structured decision for one turn.
 
-    satisfied: bool
+    ``action`` selects the controller's branch:
+    - ``"judge"`` (default): normal judgment — advance / correct / force-advance
+      based on ``satisfied``.
+    - ``"answer"``: the agent's output was primarily clarifying questions; the
+      user answers them. The message becomes the next instruction on the SAME
+      milestone (clarification sub-loop; no correction consumed, no advance).
+    """
+
     message: str
+    satisfied: bool = False
+    action: Literal["judge", "answer"] = "judge"
 
 
 def parse_turn_decision(raw: str) -> TurnDecision:
     """Parse the user-LLM's strict-JSON reply into a ``TurnDecision``.
 
     Tolerates an optional ``````json```` fence. Raises ``ValueError`` on
-    malformed JSON or a non-object payload.
+    malformed JSON or a non-object payload. Unknown/absent ``action`` falls back
+    to ``"judge"`` (conservative — never advance or answer on a misread).
     """
     text = raw.strip()
     if text.startswith("```"):
@@ -62,7 +72,11 @@ def parse_turn_decision(raw: str) -> TurnDecision:
         raise ValueError(f"user-LLM output is not valid JSON: {exc}") from exc
     if not isinstance(data, dict):
         raise ValueError(f"user-LLM output is not a JSON object: {data!r}")
+    action = data.get("action", "judge")
+    if action not in ("judge", "answer"):
+        action = "judge"
     return TurnDecision(
+        action=action,
         satisfied=bool(data.get("satisfied", False)),
         message=str(data.get("message", "")).strip(),
     )
@@ -129,6 +143,7 @@ class UserSimulator:
             transcript=self._transcript,
             agent_output=agent_output,
             workspace_evidence=workspace_evidence,
+            max_clarifications=self.scenario.max_clarifications,
         )
         raw = (await self._call_llm(prompt)).strip()
         try:

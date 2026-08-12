@@ -1,0 +1,26 @@
+[
+  {
+    "order_id": "YGO-20260801-0001",
+    "customer": "张先生",
+    "status": "shipped",
+    "progress": 3,
+    "items": [{"name": "云购智能手表 YunGo Watch S2", "qty": 1}],
+    "shipped_at": "2026-08-01 10:00"
+  },
+  {
+    "order_id": "YGO-20260802-0002",
+    "customer": "李女士",
+    "status": "delivered",
+    "progress": 4,
+    "items": [{"name": "云购降噪耳机 YunGo Buds Pro", "qty": 2}],
+    "shipped_at": "2026-07-30 09:00"
+  },
+  {
+    "order_id": "YGO-20260803-0003",
+    "customer": "王先生",
+    "status": "pending",
+    "progress": 1,
+    "items": [{"name": "云购扫地机器人 YunGo RoboVac X1", "qty": 1}],
+    "shipped_at": null
+  }
+]

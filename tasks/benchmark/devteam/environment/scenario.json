@@ -1,0 +1,36 @@
+{
+  "user_persona": "软件开发团队的技术负责人老王,熟悉命令行、不是专职产品经理但懂团队日常;说话简短口语化,像微信聊天;很在意'真实能用'——数据不能丢、每次新需求都以不破坏已有功能为前提;需求总是先讲个大概,细节要 agent 自己问清楚再动手。",
+  "milestones": [
+    {
+      "index": 1,
+      "requirement": "在 /workspace 用 Python 标准库实现一个团队协同开发命令行工具,入口为 `devteam`(或 `python3 src/devteam.py`),能直接运行、正常退出。工具数据持久化保存在当前目录的 devteam.json 文件中,多次调用(不同进程)之间状态保持一致。命令:devteam project create <项目名> 创建项目,创建者自动成为该项目 owner;devteam project list 每行打印一个项目名;devteam member add <成员名> --project <项目名> --role owner|member|viewer 添加成员并指定角色(不写 --role 时默认 member);devteam member remove <成员名> --project <项目名> 移除成员;devteam member list --project <项目名> 每行打印 '姓名: 角色'。当前操作者由环境变量 DEVTEAM_USER 指定(未设置时默认 root,root 对所有项目拥有全部权限)。角色语义:owner 拥有全部权限(可添加/移除成员、删除项目);member 可读写(可提交代码);viewer 只读(只能查看项目内容,不能提交代码、不能管理日程/成员)。权限规则:非项目成员不能对该项目执行任何操作(报错并以非零码退出);只有 owner 能添加/移除成员和删除项目,其他角色尝试时报错并以非零码退出。",
+      "user_intent": "我们团队要一起写代码,想请你给我们做一个命令行协同开发工具 devteam:能建项目(devteam project create/list)、能管理团队成员并给成员分权限(devteam member add/remove/list,--role 分 owner/member/viewer)。数据要存到当前目录的 devteam.json,关了终端再打开也还在。权限规则:非项目成员不能操作项目;只有 owner 能管理成员;viewer 只读,不能提交代码、不能管理日程/成员。命令怎么设计、细节拿不准的,先问我。",
+      "test_id": "devteam_org",
+      "user_knowledge": "工具名叫 devteam;数据存在当前目录的 devteam.json;角色分 owner/member/viewer 三种,owner 能管理成员、member 能提交代码、viewer 只读;当前是谁在操作看环境变量 DEVTEAM_USER(不设置默认 root,root 有全部权限);项目创建者自动成为 owner。"
+    },
+    {
+      "index": 2,
+      "requirement": "在现有 devteam 工具上新增代码版本控制与协作功能(项目/成员/权限等已有命令行为保持不变)。每个项目有一个代码工作区目录 projects/<项目名>/code/,团队的代码文件就放在这里(文件由团队直接写入,devteam 只负责版本控制):devteam commit <项目名> -m <消息> 把当前 projects/<项目名>/code/ 下的所有文件快照成一个提交,记录提交者(DEVTEAM_USER)与时间,打印提交 id;devteam history <项目名> 按从新到旧列出提交,每行 'id 提交者 时间 消息';devteam rollback <项目名> <提交id> 把 code/ 下的文件恢复为该提交时的内容(会覆盖当前文件);devteam file-history <项目名> <文件名> 列出包含该文件的提交,每行 'id 提交者 消息',按从新到旧。权限:项目成员(owner/member)可以提交和回滚;非项目成员不能对项目执行任何操作(报错并以非零码退出)。devteam.json、code/ 目录与提交快照都持久化,重启后仍可用。",
+      "user_intent": "项目能建了,现在要能真正一起写代码:给每个项目一个代码目录(projects/<项目名>/code/),代码文件团队直接写在里面,你帮我们做版本控制——devteam commit 提交(带 -m 消息,记下是谁提交的)、devteam history 看历史、devteam rollback 回滚到某个提交、devteam file-history 看某个文件被改过几次。提交/回滚要有权限检查,非成员不能操作。以前的命令别弄坏。",
+      "test_id": "devteam_vcs",
+      "user_knowledge": "代码文件放在 projects/<项目名>/code/ 目录,是团队直接写的,工具只做版本控制;提交用 -m 写消息,回滚会覆盖 code/ 里的文件;提交记录要带提交者(DEVTEAM_USER)。"
+    },
+    {
+      "index": 3,
+      "requirement": "在现有 devteam 工具上新增团队日程管理与界面优化(已有功能全部保持不变):devteam event add <项目名> <标题> --date <YYYY-MM-DD> [--member <成员名>] 添加一条日程;devteam event list <项目名> [--date <YYYY-MM-DD>] 按日期从早到晚列出日程,每行 'id 日期 标题',支持按日期过滤;devteam event remove <项目名> <id> 移除一条日程;event add/remove 仅 owner/member 可执行(viewer 只读,只能查看日程,不能管理日程);devteam status <项目名> 打印项目概览,成员数/代码文件数/提交数分别以 '成员数: <N>'、'代码文件数: <N>'、'提交数: <N>' 的形式打印,并包含未来 7 天内的日程(含日期与标题);devteam dashboard <项目名> 生成一个自包含的 HTML 概览页到当前目录的 dashboard-<项目名>.html,页面须包含项目名、成员名单和日程列表,不改动已有文件;devteam member list / devteam event list / devteam history 均支持 --output-json,输出 JSON 数组(对象分别含 name+role / id+date+title / id+author+message)。权限与之前一致:非项目成员不能操作项目。",
+      "user_intent": "团队要排日程,给 devteam 加个日程功能:event add 添加日程(用 --date 指定日期)、event list 按日期列出、event remove 删除——日程的添加/删除只有 owner/member 能做,viewer 只能看日程;再要一个 status 命令一屏看项目概况(项目名、成员数、代码文件数、提交数、未来 7 天日程,成员数/文件数/提交数用'成员数: <N>'这样的形式),一个 dashboard 命令生成个自包含 HTML 概览页(要含项目名、成员、日程)到当前目录。member list / event list / history 都支持 --output-json。以前的功能别动。",
+      "test_id": "devteam_schedule",
+      "user_knowledge": "日程用 --date 指定日期,格式 YYYY-MM-DD;dashboard 输出到当前目录的 dashboard-<项目名>.html,要包含项目名、成员名单、日程列表。"
+    },
+    {
+      "index": 4,
+      "requirement": "在现有 devteam 工具上新增代码辅助功能并调整一条权限规则(已有功能全部保持不变):devteam check <项目名> 扫描 projects/<项目名>/code/ 下的 .py 文件,输出每处问题的 '文件:行号: 问题描述',问题类型包括语法错误(如括号未闭合)、未定义变量、TODO 标记;没有任何问题时不输出,退出码始终为 0;devteam autocomplete <项目名> <前缀> 收集 projects/<项目名>/code/ 下 .py 文件中定义的函数名/类名/变量名,输出以该前缀开头的名字,每行一个,按字母序。权限调整:viewer 角色现在可以提交代码了(取代此前'viewer 只读'的规定,今后所有成员 owner/member/viewer 都享有提交权限;项目创建者 owner、非成员禁入、只有 owner 能管理成员、event add/remove 仍仅 owner/member 可执行、viewer 只能查看日程等其余规则保持不变)。已有全部功能保持不变。",
+      "user_intent": "写代码要更顺,加两个功能:devteam check 扫代码质量(语法错误、没定义的变量、TODO 标记,输出'文件:行号: 问题'),devteam autocomplete 给个前缀能提示项目代码里定义的名字(函数/类/变量)。另外权限调整一下:viewer 现在也能提交代码了,以前那条'viewer 只读'的规定作废,所有成员都能提交;但日程的添加/删除还是只有 owner/member 能做,viewer 只能看日程。其它都别动。",
+      "test_id": "devteam_quality",
+      "user_knowledge": "check/autocomplete 只扫 projects/<项目名>/code/ 里的 .py 文件;记得把之前定的'viewer 只读'规则改掉,viewer 现在可以提交。"
+    }
+  ],
+  "max_rounds": 12,
+  "max_corrections": 1,
+  "max_clarifications": 3
+}

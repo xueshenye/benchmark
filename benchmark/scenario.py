@@ -26,6 +26,14 @@ class Milestone(BaseModel):
     requirement: str = Field(description="Ground-truth requirement (cumulative).")
     user_intent: str = Field(description="What the user-LLM should convey, in its own words.")
     test_id: str = Field(description="Key that maps to a check function in the task's scorer.")
+    user_knowledge: str = Field(
+        default="",
+        description=(
+            "Facts the simulated user knows and may REVEAL if the agent asks "
+            "(clarification sub-loop), but must not volunteer. Ground truth for "
+            "the user-LLM's answers to clarifying questions."
+        ),
+    )
 
 
 class Scenario(BaseModel):
@@ -36,6 +44,16 @@ class Scenario(BaseModel):
     max_rounds: int = Field(ge=1, description="Hard cap on total agent rounds.")
     max_corrections: int = Field(
         default=1, ge=0, description="Corrective rounds allowed per milestone before force-advance."
+    )
+    max_clarifications: int = Field(
+        default=2,
+        ge=0,
+        description=(
+            "Answer rounds allowed per milestone in the clarification sub-loop: when the "
+            "agent's output is primarily clarifying questions, the user answers them on the "
+            "same milestone without consuming a correction. Once exhausted, further "
+            "question-asking rounds are treated as corrections."
+        ),
     )
 
     @model_validator(mode="after")
