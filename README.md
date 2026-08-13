@@ -2,7 +2,7 @@
 
 基于 [Harbor](https://github.com/laude-institute/harbor) 框架构建的编程领域 **Multi-turn 交互式 Agent Benchmark**。
 
-核心任务为 **devteam**（团队协同开发工具）；更早的 **T1/T2/T3**（todo-tracker / repofix / pkg-wordcount）作为复杂度阶梯的简短前序。
+核心任务为 **devteam**（团队协同开发工具）；更早的 **T1/T2/T3**（todo-tracker / repofix / pkg-wordcount）作为复杂度阶梯的简短前序任务。
 
 
 ---
@@ -16,14 +16,14 @@
 - **避免遗忘旧约束**（回归）；
 - **最终完成编程任务**。
 
-**介入是动态的**：user-LLM 每轮判定上一轮输出是否满足当前里程碑 —— 满意→推进下一里程碑；不满意→纠正轮（留在当前，≤ `max_corrections`）；纠正耗尽→强制推进（该里程碑由 verifier 判 0）。总轮次由 `max_rounds` 硬上限约束。
+**介入是动态的**：user-LLM 每轮判定上一轮输出是否满足当前里程碑 —— 满意→推进下一里程碑；不满意→进入纠正轮（留在当前里程碑，纠正轮数 ≤ `max_corrections`）；纠正耗尽→强制推进（该里程碑由 verifier 判 0）。总轮次由 `max_rounds` 硬上限约束。
 
 ## 2. 任务设计
 
 ### 2.1 devteam（主任务）—— 团队协同开发工具
 
 **整体需求**：为一个**小型软件开发团队**做一个**命令行协同开发工具** `devteam`，帮成员们共同管理代码。团队需要的核心能力是：
-- **项目与成员管理**：能建项目、添加 / 移除成员、给成员分角色（谁能管、谁能写、谁能只看）；
+- **项目与成员管理**：创建项目、添加或移除成员、维护成员角色（管理员、编辑者、只读用户）；
 - **代码协作**：一个共享的代码工作区，能提交、回滚、查看历史（相当于团队自建一个轻量版本控制）；
 - **日程与概览**：排团队日程，随时一眼看到项目全貌（成员、文件、提交、近 7 天日程）；
 - **写代码辅助**：质量检查（语法错误、未定义变量、TODO）与补全提示。
@@ -111,20 +111,20 @@ proj/
 │   ├── interactive_agent.py         # InteractiveUserClaude:多轮循环 + claude-code 驱动,每轮把 user 消息作为下一条指令传给 agent,抓取工作区 diff
 │   ├── controller.py                # TurnController:里程碑状态机(推进/纠正/澄清/强制推进)
 │   ├── user_simulator.py            # UserSimulator:LiteLLM 判定 + 生成自然 user 消息
-│   ├── manual_user.py               # 真人扮演用户模式(USER_SIMULATOR=manual)
-│   ├── prompt_templates.py          # user-LLM 提示词(判定 + 消息;含"上手实测 + 至少一条建议"规则)
+│   ├── manual_user.py               # 真人扮演用户模式(传入参数：USER_SIMULATOR=manual)
+│   ├── prompt_templates.py          # user-LLM 提示词(判定 + 消息；含"上手实测 + 至少一条建议"的规则)
 │   ├── scenario.py                  # Milestone/Scenario 模型(schema 校验)
-│   ├── run_model_compare.sh         # 多后端多模型对比 grid(deepseek/zai/moonshot/aliyun)
+│   ├── run_model_compare.sh         # 多后端多模型对比 grid(deepseek、智谱、kimi、千问)
 │   ├── debug_long_sandbox_plugin.py # 长沙箱 + 无单命令超时插件(LongSandboxPlugin)
 │   ├── partial_devteam.py           # 判别器(只做 M1+M2)
 │   └── step_driver / multi_step_trial / interactive_step_agent / design_b_plugin.py
-│                                     # Design B(实验性):原生 multi-step 路径,devteam 本身走 Design A+
+│                                     # Design B(实验性):原生 multi-step 路径，devteam 任务并未采用
 ├── tasks/benchmark/devteam/         # 主任务
 │   ├── instruction.md               # 第 1 轮初始任务(刻意简略)
 │   ├── task.toml
-│   ├── environment/{Dockerfile, scenario.json}  # scenario.json 进容器 /scenario.json(不在 /workspace,防 agent 偷看未来里程碑)
+│   ├── environment/{Dockerfile, scenario.json}  # 运行环境，其中 scenario.json 描述了任务需求，为了防止 agent 提前了解未来里程碑造成指标泄露，该文件不在 /workspace 目录中。此处并未针对恶意评判设置专门的安全隔离环节。
 │   ├── solution/solve.sh            # 参考解法(全 4 里程碑)
-│   └── tests/{test.sh, scorer.py}   # 逐里程碑累计计分 → reward.json
+│   └── tests/{test.sh, scorer.py}   # 逐里程碑累计计分 → reward.json + rewards.txt(双写:Harbor 读 reward.json,rewards.txt 满足 req.txt 字面要求)
 ├── tasks/benchmark/{todo-tracker, repofix, pkg-wordcount}/   # T1–T3 前序任务
 ├── tests/                           # 无 Docker 单元测试
 ├── docs/task-devteam.md             # devteam 验收文档(每里程碑需求 + 评价标准 + 手动判断)
