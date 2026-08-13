@@ -22,14 +22,30 @@
 
 ### 2.1 devteam（主任务）—— 团队协同开发工具
 
-**形态**：CLI + HTML 仪表盘。agent 为一个小型软件团队构建 `devteam` 命令，跨 **4 个里程碑**演进；数据持久化到当前目录 `devteam.json`，代码工作区在 `projects/<项目名>/code/`，操作者由 `DEVTEAM_USER` 指定。每个里程碑都是**可观测行为**（CLI 输出 / 磁盘状态 / 文件内容），verifier 对**最终**工作区逐一检查，并**重新验证之前所有里程碑**（累计回归）。
+**形态**：CLI + HTML 仪表盘。agent 为一个小型软件团队构建 `devteam` 命令，跨 **4 个里程碑**演进；数据持久化到当前目录 `devteam.json`，代码工作区在 `projects/<项目名>/code/`，操作者由 `DEVTEAM_USER` 指定。每个里程碑都是**可观测行为**（CLI 输出 / 磁盘状态 / 文件内容），verifier 对**最终**工作区逐一检查，并**重新验证之前所有里程碑**（累计回归）。各里程碑 agent 具体完成的任务如下：
 
-| 里程碑 | test_id | 需求内容 |
-|---|---|---|
-| M1 | `devteam_org` | 项目 / 成员 / 角色（owner·member·viewer）权限模型：非成员禁入、仅 owner 管成员、viewer 只读 |
-| M2 | `devteam_vcs` | 迷你 VCS：`commit -m`（快照 + 署名）/ `history` / `rollback` / `file-history`；代码文件含 unicode 与嵌套路径 |
-| M3 | `devteam_schedule` | 日程 `event add/list/remove` + UI：`status` 概览（精确计数 `成员数: N` 等）/ 自包含 HTML `dashboard-<项目名>.html` / `--output-json` |
-| M4 | `devteam_quality` | 质量检测 `check`（语法错误 / 未定义变量 / TODO，须区分注释与字符串）+ `autocomplete` + **权限反转**：viewer 从"只读"改为"能提交"，但日程管理仍仅 owner/member |
+**M1 `devteam_org` —— 项目与成员权限模型**
+- 从零搭建 `devteam` CLI 与数据层：`project create/list/remove`（创建者自动成为 owner），数据写入当前目录 `devteam.json`（跨进程保留）；
+- `member add/remove/list --project <项目名> --role owner|member|viewer`（不写 `--role` 默认 member）；
+- 身份：`DEVTEAM_USER` 环境变量（未设置默认 root 超管）；
+- 权限：非成员禁入、仅 owner 能管成员 / 删项目、viewer 只读。
+
+**M2 `devteam_vcs` —— 迷你版本控制与协作**
+- 代码工作区 `projects/<项目名>/code/`（团队直接写文件，agent 只管版本控制）；
+- `commit <项目名> -m <消息>`：快照全部文件 + 记录提交者（`DEVTEAM_USER`）+ 打印 id；
+- `history <项目名>`（新到旧，`id 提交者 时间 消息`）、`rollback <项目名> <id>`（恢复文件内容）、`file-history <项目名> <文件>`（含 unicode / 嵌套路径文件名）；
+- 权限：member / owner 可提交，非成员禁入；M1 的项目 / 成员 / 权限命令全部不坏。
+
+**M3 `devteam_schedule` —— 日程与界面**
+- `event add/list/remove --date <YYYY-MM-DD> [--member <成员名>]`（日程增删仅 owner / member，viewer 只读）；
+- `status <项目名>`：概览含精确计数 `成员数: N` / `代码文件数: N` / `提交数: N` + 未来 7 天日程；
+- `dashboard <项目名>`：生成自包含 `dashboard-<项目名>.html`（含项目名 / 成员 / 日程）；
+- `member list` / `event list` / `history` 支持 `--output-json`。
+
+**M4 `devteam_quality` —— 质量工具与权限反转**
+- `check <项目名>`：扫描 code/ 下 `.py`，报语法错误 / 未定义变量 / TODO（须区分注释与字符串；干净零输出、退出码恒 0）；
+- `autocomplete <项目名> <前缀>`：收集项目里定义的函数 / 类 / 变量名，前缀匹配、字母序；
+- **权限反转**：viewer 从"只读"改为"能提交"（commit / rollback），但日程管理仍仅 owner / member；非成员禁入等 M1 规则保持不变。
 
 **多轮介入机制**：第 1 轮 = `instruction.md`（刻意简略，迫使 agent 澄清）；后续轮 = user-LLM 基于「上轮输出 + 工作区真实 diff」的判定与自然消息。支持**澄清子循环**（agent 提问 → user 按 `user_knowledge` 回答，不消耗纠正、不推进）。`benchmark/manual_user.py` 提供**真人扮演用户**模式（`USER_SIMULATOR=manual`），每轮打印里程碑需求 + 评价标准，人手判定。
 
