@@ -89,7 +89,7 @@
 
 ## 5. 模型运行结果
 
-> **最终 grid（clean，无 scenario 泄漏）**：固定 user-LLM = kimi-k3，`REWARD_MODE=dense`，**MT@2**（每模型任务级独立重跑 2 次，MT@k = 达到 reward=1 的占比）。完整逐 attempt 记录见本地交接文档（PROJECT_STATE.md，gitignored 未入库）。
+> 固定 user-LLM = kimi-k3，`REWARD_MODE=dense`，**MT@2**（每模型任务级独立重跑 2 次，MT@k = 达到 reward=1 的占比）。
 
 | 模型 / 后端 | MT@2 | mean(dense) | R1 | R2 | R3 | R4 | 首败轮 | 澄清/纠正/分歧 |
 |---|---|---|---|---|---|---|---|---|
@@ -171,7 +171,7 @@ cp .env.example .env   # 填入下列 key
 - **长沙箱观察跑**：加 `--plugin benchmark.debug_long_sandbox_plugin:LongSandboxPlugin`（默认 2h，`NOVITA_SANDBOX_TIMEOUT` 可配；1h 沙箱只够约 6 轮，复杂任务 4 里程碑跑不完）。
 - **reward 双模式**：`--ve REWARD_MODE=dense`（默认）或 `--ve REWARD_MODE=binary`（旧 0/1）。
 
-### devteam 任务测试教程（从本地到端到端）
+### devteam 任务测试教程
 
 ```bash
 PY=.venv/bin/python
@@ -238,7 +238,3 @@ USER_SIMULATOR=manual PYTHONPATH=. .venv/bin/harbor run -e novita --env-file .en
 1. **覆盖任务量过少**：目前只有一个深度任务（devteam）+ 三个简短前序（T1–T3）。为得到更稳健的模型排名与能力画像，需要扩充到更多真实编程场景的任务。
 2. **MT@k 评估刚起步**：已按 EvoCode-Bench 的做法给 `run_model_compare.sh` 加入多轮采样评估（默认 `MT@2`，任务级独立重跑，MT@k = 达到 reward=1 的占比；附 per-round 均值衰减曲线、首败轮次、reference/nop 基线）。受算力限制目前只跑 MT@2，后续可扩展 k 与更多轮次。
 3. **对用户的模拟还需提升可靠性与真实性**：实测 user-LLM 存在**过度接受**（judge-vs-scorer 分歧：user 判定满足但 verifier 判 0），且偶尔会"发明"ground-truth 之外的要求；还出现过**判定动作标错** —— kimi 一次把 `action` 标成 `answer`（澄清）但消息内容其实是"推进到下一里程碑"的需求，控制器按 answer 停在当前里程碑，可能扭曲了交互流。需更强的忠实度护栏、`action` 与 `message` 的一致性校验、judge-vs-scorer 分歧报告作为质量哨兵，并用多 user-LLM 模型校准（"Lost in Simulation" 敏感性）。真人扮演模式（`USER_SIMULATOR=manual`）可作为高可靠性的替代与校验手段。
-
----
-
-**Reward 协议偏差说明**：需求原文写 `test.sh 将最终得分写入 /logs/verifier/rewards.txt`。经核对 Harbor 0.20.0，verifier **只读** `/logs/verifier/reward.txt`（标量）或 `reward.json`（扁平 dict str→number）；`rewards.txt`/`rewards.json`（复数）不存在。本项目用 `/logs/verifier/reward.json`（多键，语义即"多个 rewards"）写入 per-round 键 + 最终 `reward`。
